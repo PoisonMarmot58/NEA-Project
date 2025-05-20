@@ -25,4 +25,3 @@ class PriorityQueue:
         self.queue[minPriority] = None
         return value
     
-
