@@ -26,18 +26,3 @@ class PriorityQueue:
         return value
     
 
-
-priorityQueue = PriorityQueue(9)
-priorityQueue.push(0, "My")
-priorityQueue.push(2, "is")
-priorityQueue.push(1, "name")
-
-print(priorityQueue.queue)
-
-print(priorityQueue.pop())
-print(priorityQueue.pop())
-print(priorityQueue.pop())
-
-print(priorityQueue.queue)
-
-
