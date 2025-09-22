@@ -26,3 +26,4 @@ def get_specific_weather(latitude = '53.405439', longitude = '3.53827'):
     response = openmeteo.weather_api(url, params=params)
 
     return response
+print(get_specific_weather())
