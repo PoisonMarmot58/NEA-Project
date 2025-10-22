@@ -1,27 +1,22 @@
 class PriorityQueue:
-    def __init__ (self, numberOfNodes):
-        self.queue = [None] * numberOfNodes
-        self.maxLength = numberOfNodes
+    def __init__ (self):
+        self.queue = []
 
+    def push(self, priority, value):
+        self.queue.append((priority, value))
+        self.queue.sort(key=lambda x: x[0])
 
-    def push(self, index, source):
-        if not self.queue:
-            self.queue.insert(index,source)
-        else:
-            for i in range(0, len(self.queue)):
-                if i == index:
-                    self.queue[index] = source
-                    
     def pop(self):
-        minPriority = float("inf")
         if not self.queue:
-            print("Error, no values to pop")
+            print("Error: Queue is empty.")
+            return None
         else:
-            for i in range(0,len(self.queue)):
-                if self.queue[i] != None:
-                    if i < minPriority:
-                        minPriority = i
-        value = self.queue[minPriority]
-        self.queue[minPriority] = None
-        return value
+            priority,value = self.queue.pop(0)
+            return value
+        
+    def is_empty(self):
+        return len(self.queue) == 0
+    
+    def size(self):
+        return len(self.queue)
     
