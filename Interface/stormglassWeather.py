@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 
 
 
-API_KEY = "4d848c4e-4486-11f0-976d-0242ac130006-4d848cda-4486-11f0-976d-0242ac130006"
 
 
 def getWeatherData(latitude, longitude):
