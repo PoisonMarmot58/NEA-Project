@@ -3,7 +3,14 @@ from tkinter import ttk, messagebox
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from pathfinder.algorithms.Astar import Grid, AStarPathfinder   
+import sys
+from pathlib import Path
+
+# Ensure `src` directory is on sys.path so `import pathfinder` works
+# when running this file directly (as a script).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from pathfinder.algorithms.Astar import Grid, AStarPathfinder
 from pathfinder.algorithms.CostCalculator import RouteCostEstimator
 
 # ────────────────────────────────────────────────
