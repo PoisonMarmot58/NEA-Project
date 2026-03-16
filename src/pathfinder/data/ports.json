@@ -1,0 +1,30 @@
+[
+  {
+    "name": "Rotterdam",
+    "country": "Netherlands",
+    "city": "Rotterdam",
+    "x_value": 51.923,
+    "y_value": 4.479
+  },
+  {
+    "name": "Antwerp-Bruges",
+    "country": "Belgium",
+    "city": "Antwerp / Zeebrugge",
+    "x_value": 51.260,
+    "y_value": 4.400
+  },
+  {
+    "name": "Hamburg",
+    "country": "Germany",
+    "city": "Hamburg",
+    "x_value": 53.547,
+    "y_value": 9.987
+  },
+  {
+    "name": "Piraeus",
+    "country": "Greece",
+    "city": "Piraeus (Athens)",
+    "x_value": 37.942,
+    "y_value": 23.637
+  }
+]

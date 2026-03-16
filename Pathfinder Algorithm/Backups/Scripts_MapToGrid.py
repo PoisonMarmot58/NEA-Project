@@ -199,7 +199,7 @@ if __name__ == "__main__":
     {"name": "Gdynia",               "lat": 54.520,  "lon": 18.530},
 
     # Portugal
-    {"name": "Sines",                "lat": 37.950,  "lon": -8.890},   # Growing fast
+    {"name": "Sines",                "lat": 37.950,  "lon": -8.890},
     {"name": "Lisbon",               "lat": 38.720,  "lon": -9.140},
 
     # Scandinavia / Baltic
@@ -226,9 +226,3 @@ if __name__ == "__main__":
         # 4. Save final result
         np.save(GRID_WITH_PORTS_FILE, final_grid)
         print(f"\nFinal grid saved as: {GRID_WITH_PORTS_FILE}")
-
-# 0- water
-# 1- land
-# 2- border
-# 3- potential port
-# 4- real major ports
