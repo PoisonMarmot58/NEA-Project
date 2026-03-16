@@ -4,7 +4,37 @@ from typing import List, Tuple, Optional
 
 class Grid:
     def __init__(self, numpyPath: str):
-        self.data = np.load(numpyPath)
+        with open(numpyPath, "rb") as f:
+            header = f.read(64)
+        if header.startswith(b"version https://git-lfs.github.com/spec/"):
+            raise ValueError(
+                f"Grid file '{numpyPath}' is a Git LFS pointer, not the real .npy data. "
+                "Fetch LFS files first (for example: git lfs pull)."
+            )
+
+        try:
+            data = np.load(numpyPath, allow_pickle=False)
+        except ValueError as exc:
+            # Retry only for the known legacy-object-array case.
+            if "allow_pickle=False" not in str(exc):
+                raise ValueError(f"Failed to load grid '{numpyPath}': {exc}") from exc
+
+            data = np.load(numpyPath, allow_pickle=True)
+
+        # Unwrap a scalar object array if needed.
+        if isinstance(data, np.ndarray) and data.dtype == object and data.shape == ():
+            data = data.item()
+
+        # If an .npz archive is provided, use the first stored array.
+        if isinstance(data, np.lib.npyio.NpzFile):
+            if not data.files:
+                raise ValueError(f"Grid archive '{numpyPath}' does not contain arrays")
+            data = data[data.files[0]]
+
+        self.data = np.asarray(data)
+        if self.data.ndim < 2:
+            raise ValueError(f"Grid data in '{numpyPath}' is not 2D")
+
         self.height, self.width = self.data.shape
 
     def is_valid(self, row: int, column: int) -> bool:
