@@ -1,0 +1,335 @@
+[
+  {
+    "name": "Rotterdam",
+    "country": "Netherlands",
+    "city": "Rotterdam",
+    "latitude": 51.923,
+    "longitude": 4.479,
+    "grid_row": 1962,
+    "grid_col": 1991
+  },
+  {
+    "name": "Amsterdam",
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "latitude": 52.37,
+    "longitude": 4.89,
+    "grid_row": 1980,
+    "grid_col": 1969
+  },
+  {
+    "name": "Moerdijk",
+    "country": "Netherlands",
+    "city": "Moerdijk",
+    "latitude": 51.7,
+    "longitude": 4.63,
+    "grid_row": 1967,
+    "grid_col": 2004
+  },
+  {
+    "name": "Antwerp-Bruges",
+    "country": "Belgium",
+    "city": "Antwerp / Zeebrugge",
+    "latitude": 51.26,
+    "longitude": 4.4,
+    "grid_row": 1957,
+    "grid_col": 2026
+  },
+  {
+    "name": "Hamburg",
+    "country": "Germany",
+    "city": "Hamburg",
+    "latitude": 53.547,
+    "longitude": 9.987,
+    "grid_row": 2190,
+    "grid_col": 1926
+  },
+  {
+    "name": "Bremerhaven",
+    "country": "Germany",
+    "city": "Bremerhaven",
+    "latitude": 53.54,
+    "longitude": 8.58,
+    "grid_row": 2133,
+    "grid_col": 1921
+  },
+  {
+    "name": "Wilhelmshaven/JadeWeser",
+    "country": "Germany",
+    "city": "Wilhelmshaven",
+    "latitude": 53.515,
+    "longitude": 8.14,
+    "grid_row": 2115,
+    "grid_col": 1920
+  },
+  {
+    "name": "Algeciras",
+    "country": "Spain",
+    "city": "Algeciras",
+    "latitude": 36.14,
+    "longitude": -5.435,
+    "grid_row": 1516,
+    "grid_col": 2794
+  },
+  {
+    "name": "Valencia",
+    "country": "Spain",
+    "city": "Valencia",
+    "latitude": 39.455,
+    "longitude": -0.32,
+    "grid_row": 1733,
+    "grid_col": 2637
+  },
+  {
+    "name": "Barcelona",
+    "country": "Spain",
+    "city": "Barcelona",
+    "latitude": 41.35,
+    "longitude": 2.15,
+    "grid_row": 1838,
+    "grid_col": 2545
+  },
+  {
+    "name": "Bilbao",
+    "country": "Spain",
+    "city": "Bilbao",
+    "latitude": 43.26,
+    "longitude": -2.93,
+    "grid_row": 1637,
+    "grid_col": 2424
+  },
+  {
+    "name": "Las Palmas (Canary)",
+    "country": "Spain",
+    "city": "Las Palmas",
+    "latitude": 28.14,
+    "longitude": -15.42,
+    "grid_row": 1088,
+    "grid_col": 3182
+  },
+  {
+    "name": "Trieste",
+    "country": "Italy",
+    "city": "Trieste",
+    "latitude": 45.65,
+    "longitude": 13.77,
+    "grid_row": 2323,
+    "grid_col": 2360
+  },
+  {
+    "name": "Genoa",
+    "country": "Italy",
+    "city": "Genoa",
+    "latitude": 44.41,
+    "longitude": 8.93,
+    "grid_row": 2123,
+    "grid_col": 2408
+  },
+  {
+    "name": "La Spezia",
+    "country": "Italy",
+    "city": "La Spezia",
+    "latitude": 44.11,
+    "longitude": 9.82,
+    "grid_row": 2158,
+    "grid_col": 2427
+  },
+  {
+    "name": "Naples",
+    "country": "Italy",
+    "city": "Naples",
+    "latitude": 40.84,
+    "longitude": 14.25,
+    "grid_row": 2329,
+    "grid_col": 2618
+  },
+  {
+    "name": "Piraeus",
+    "country": "Greece",
+    "city": "Piraeus (Athens)",
+    "latitude": 37.942,
+    "longitude": 23.637,
+    "grid_row": 2703,
+    "grid_col": 2808
+  },
+  {
+    "name": "Felixstowe",
+    "country": "United Kingdom",
+    "city": "Felixstowe",
+    "latitude": 51.963,
+    "longitude": 1.351,
+    "grid_row": 1835,
+    "grid_col": 1977
+  },
+  {
+    "name": "Southampton",
+    "country": "United Kingdom",
+    "city": "Southampton",
+    "latitude": 50.91,
+    "longitude": -1.404,
+    "grid_row": 1720,
+    "grid_col": 2023
+  },
+  {
+    "name": "London Gateway",
+    "country": "United Kingdom",
+    "city": "Thurrock",
+    "latitude": 51.5,
+    "longitude": 0.46,
+    "grid_row": 1797,
+    "grid_col": 1999
+  },
+  {
+    "name": "Liverpool (Peel Ports)",
+    "country": "United Kingdom",
+    "city": "Liverpool",
+    "latitude": 53.4,
+    "longitude": -3.0,
+    "grid_row": 1662,
+    "grid_col": 1884
+  },
+  {
+    "name": "Le Havre",
+    "country": "France",
+    "city": "Le Havre",
+    "latitude": 49.49,
+    "longitude": 0.107,
+    "grid_row": 1777,
+    "grid_col": 2104
+  },
+  {
+    "name": "Marseille-Fos",
+    "country": "France",
+    "city": "Marseille / Fos",
+    "latitude": 43.38,
+    "longitude": 5.04,
+    "grid_row": 1962,
+    "grid_col": 2448
+  },
+  {
+    "name": "Dunkirk",
+    "country": "France",
+    "city": "Dunkirk",
+    "latitude": 51.03,
+    "longitude": 2.37,
+    "grid_row": 1874,
+    "grid_col": 2031
+  },
+  {
+    "name": "Gdansk",
+    "country": "Poland",
+    "city": "Gdansk",
+    "latitude": 54.36,
+    "longitude": 18.645,
+    "grid_row": 2545,
+    "grid_col": 1915
+  },
+  {
+    "name": "Gdynia",
+    "country": "Poland",
+    "city": "Gdynia",
+    "latitude": 54.52,
+    "longitude": 18.53,
+    "grid_row": 2541,
+    "grid_col": 1906
+  },
+  {
+    "name": "Sines",
+    "country": "Portugal",
+    "city": "Sines",
+    "latitude": 37.95,
+    "longitude": -8.89,
+    "grid_row": 1380,
+    "grid_col": 2684
+  },
+  {
+    "name": "Lisbon",
+    "country": "Portugal",
+    "city": "Lisbon",
+    "latitude": 38.72,
+    "longitude": -9.14,
+    "grid_row": 1372,
+    "grid_col": 2643
+  },
+  {
+    "name": "Gothenburg",
+    "country": "Sweden",
+    "city": "Gothenburg",
+    "latitude": 57.7,
+    "longitude": 11.97,
+    "grid_row": 2282,
+    "grid_col": 1712
+  },
+  {
+    "name": "Aarhus",
+    "country": "Denmark",
+    "city": "Aarhus",
+    "latitude": 56.15,
+    "longitude": 10.21,
+    "grid_row": 2207,
+    "grid_col": 1788
+  },
+  {
+    "name": "Copenhagen-Malmo",
+    "country": "Denmark/Sweden",
+    "city": "Copenhagen / Malmo",
+    "latitude": 55.67,
+    "longitude": 12.59,
+    "grid_row": 2302,
+    "grid_col": 1822
+  },
+  {
+    "name": "Helsinki",
+    "country": "Finland",
+    "city": "Helsinki",
+    "latitude": 60.17,
+    "longitude": 24.94,
+    "grid_row": 2817,
+    "grid_col": 1630
+  },
+  {
+    "name": "Klaipeda",
+    "country": "Lithuania",
+    "city": "Klaipeda",
+    "latitude": 55.71,
+    "longitude": 21.13,
+    "grid_row": 2650,
+    "grid_col": 1853
+  },
+  {
+    "name": "Constanta",
+    "country": "Romania",
+    "city": "Constanta",
+    "latitude": 44.17,
+    "longitude": 28.65,
+    "grid_row": 2924,
+    "grid_col": 2495
+  },
+  {
+    "name": "Izmir",
+    "country": "Turkey",
+    "city": "Izmir",
+    "latitude": 38.42,
+    "longitude": 27.14,
+    "grid_row": 2847,
+    "grid_col": 2796
+  },
+  {
+    "name": "Koper",
+    "country": "Slovenia",
+    "city": "Koper",
+    "latitude": 45.55,
+    "longitude": 13.73,
+    "grid_row": 2321,
+    "grid_col": 2365
+  },
+  {
+    "name": "Rijeka",
+    "country": "Croatia",
+    "city": "Rijeka",
+    "latitude": 45.33,
+    "longitude": 14.44,
+    "grid_row": 2349,
+    "grid_col": 2380
+  }
+]

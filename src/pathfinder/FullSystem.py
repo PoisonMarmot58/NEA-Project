@@ -20,7 +20,7 @@ from pathfinder.algorithms.CostCalculator import RouteCostEstimator
 # ────────────────────────────────────────────────
 
 GRID_FILE = r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
-PORTS_FILE = Path(__file__).resolve().parent / "data" / "ports.json"
+PORTS_FILE = Path(__file__).resolve().parent / "data" / "ports_user_calibrated.json"
 
 SHIP_PROFILES = {
     "Feeder (1k-3k TEU)": {
@@ -143,12 +143,14 @@ class PathfinderGUI:
         tk.Label(frame, text="Start Port:", font=("Arial", 16, "bold"), bg="#e8f0f8").grid(row=0, column=0, padx=22, pady=12, sticky="e")
         self.start_var = tk.StringVar(value=self.port_labels[0])
         self.start_menu = ttk.Combobox(frame, textvariable=self.start_var, values=self.port_labels, state="normal", width=64, style="StartGoal.TCombobox")
+        self.start_menu.configure(font=("Arial", 44, "bold"))
         self.start_menu.grid(row=0, column=1, padx=22, pady=12)
         self.enable_port_autocomplete(self.start_menu, self.start_var)
 
         tk.Label(frame, text="Goal Port:", font=("Arial", 16, "bold"), bg="#e8f0f8").grid(row=1, column=0, padx=22, pady=12, sticky="e")
         self.goal_var = tk.StringVar(value=self.port_labels[1])
         self.goal_menu = ttk.Combobox(frame, textvariable=self.goal_var, values=self.port_labels, state="normal", width=64, style="StartGoal.TCombobox")
+        self.goal_menu.configure(font=("Arial", 44, "bold"))
         self.goal_menu.grid(row=1, column=1, padx=22, pady=12)
         self.enable_port_autocomplete(self.goal_menu, self.goal_var)
 
@@ -160,8 +162,10 @@ class PathfinderGUI:
             values=self.ship_profile_names,
             state="normal",
             width=64,
-            style="Large.TCombobox",
+            style="StartGoal.TCombobox",
         )
+        # Match Start/Goal combobox font/size so all three look identical
+        self.ship_profile_menu.configure(font=("Arial", 44, "bold"))
         self.ship_profile_menu.grid(row=2, column=1, padx=22, pady=12)
         self.enable_ship_profile_autocomplete(self.ship_profile_menu, self.ship_profile_var)
 
@@ -529,12 +533,29 @@ class PathfinderGUI:
         raw_start = start_port["coords"]
         raw_goal = goal_port["coords"]
 
-        start = self.nearest_component_water_cell(raw_start)
-        goal = self.nearest_component_water_cell(raw_goal, avoid_cell=start)
+        # If the provided grid coordinate already contains a port cell, use it.
+        # Otherwise snap to the nearest water cell in the main component to avoid picking
+        # an unrelated nearby port (e.g., Piraeus) when the intended port isn't encoded as a port cell.
+        if self.grid.is_port(raw_start[0], raw_start[1]):
+            start = raw_start
+        else:
+            start = self.nearest_component_water_cell(raw_start)
 
+        if self.grid.is_port(raw_goal[0], raw_goal[1]):
+            goal = raw_goal
+        else:
+            goal = self.nearest_component_water_cell(raw_goal, avoid_cell=start)
+
+        # If both snapped to the same cell, try widening the search for the goal
         if start == goal:
-            # Retry with a wider search radius before giving up.
             goal = self.nearest_component_water_cell(raw_goal, max_radius=900, avoid_cell=start)
+
+        # Debugging output: show raw vs snapped coords and grid cell values
+        try:
+            print(f"DEBUG: {start_name} raw={raw_start} val={self.grid.data[raw_start[0], raw_start[1]]} -> snapped={start} val={self.grid.data[start[0], start[1]]}")
+            print(f"DEBUG: {goal_name} raw={raw_goal} val={self.grid.data[raw_goal[0], raw_goal[1]]} -> snapped={goal} val={self.grid.data[goal[0], goal[1]]}")
+        except Exception:
+            pass
 
         if start == goal:
             self.status_label.config(text="Ports map to the same sea cell")
