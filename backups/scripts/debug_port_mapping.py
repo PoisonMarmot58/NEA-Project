@@ -1,7 +1,12 @@
+"""debug port mapping module."""
+
 from pathlib import Path
 import numpy as np
 
-GRID_FILE = r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
+GRID_FILE = (
+    r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2"
+    r"\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
+)
 
 izmir = (2985, 2841)
 piraeus = (3044, 2918)

@@ -1,4 +1,4 @@
-"""Recreate grid coordinates from real lat/lon and realign ports to coastline water cells."""
+"""Rebuild grid coordinates from lat/lon and snap to nearby water cells."""
 
 import json
 from pathlib import Path
@@ -12,7 +12,7 @@ GRID_PATH = ROOT / "Pathfinder Algorithm" / "Data" / "FullGridOfEurope.npy"
 SOURCE_PORTS = ROOT / "src" / "pathfinder" / "data" / "ports.json"
 OUTPUT_PORTS = ROOT / "src" / "pathfinder" / "data" / "ports_recreated_realigned.json"
 
-# Curated control points across North Sea, Atlantic, Mediterranean, Baltic, Black Sea.
+# Control points spread across North Sea, Atlantic, Mediterranean, Baltic, and Black Sea.
 # [latitude, longitude, grid_row, grid_col]
 CONTROL_POINTS = np.array(
     [
@@ -38,7 +38,7 @@ CONTROL_POINTS = np.array(
 
 
 def predict_with_interpolation(lat: float, lon: float, control_points: np.ndarray):
-    """Predict (row, col) with linear interpolation and nearest fallback outside hull."""
+    """Predict (row, col) with linear interpolation and an IDW fallback."""
     geo = control_points[:, :2]
     rows = control_points[:, 2]
     cols = control_points[:, 3]
@@ -50,7 +50,7 @@ def predict_with_interpolation(lat: float, lon: float, control_points: np.ndarra
     col_val = interp_col(lat, lon)
 
     if np.isnan(row_val) or np.isnan(col_val):
-        # Outside convex hull: inverse-distance weighted fallback on nearest controls.
+        # Outside the convex hull, use inverse-distance weighting on nearest controls.
         deltas = geo - np.array([lat, lon], dtype=float)
         distances = np.sqrt(np.sum(deltas * deltas, axis=1))
         k = min(4, len(distances))

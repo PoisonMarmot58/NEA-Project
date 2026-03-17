@@ -4,7 +4,10 @@ from pathfinder.algorithms.Astar import Grid, AStarPathfinder
 
 #config
 
-GRID_FILE = r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
+GRID_FILE = (
+    r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2"
+    r"\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
+)
 
 
 PORTS = [

@@ -1,3 +1,5 @@
+"""FullSystem module."""
+
 import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
@@ -10,7 +12,10 @@ from CostCalculator import RouteCostEstimator
 #                     CONFIG
 # ────────────────────────────────────────────────
 
-GRID_FILE = r"C:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
+GRID_FILE = (
+    r"C:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2"
+    r"\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
+)
 
 PORTS = [
     {"name": "Rotterdam",   "coords": (595, 475)},
@@ -48,28 +53,66 @@ class PathfinderGUI:
         )
 
         # ── Header ──
-        tk.Label(root, text="Sea Route Pathfinder", font=("Arial", 22, "bold"), bg="#e8f0f8", fg="#2c3e50").pack(pady=15)
+        tk.Label(
+            root,
+            text="Sea Route Pathfinder",
+            font=("Arial", 22, "bold"),
+            bg="#e8f0f8",
+            fg="#2c3e50",
+        ).pack(pady=15)
 
         # ── Port selection ──
         frame = tk.Frame(root, bg="#e8f0f8")
         frame.pack(pady=10)
 
-        tk.Label(frame, text="Start Port:", font=("Arial", 12), bg="#e8f0f8").grid(row=0, column=0, padx=15, pady=8, sticky="e")
+        tk.Label(
+            frame,
+            text="Start Port:",
+            font=("Arial", 12),
+            bg="#e8f0f8",
+        ).grid(row=0, column=0, padx=15, pady=8, sticky="e")
         self.start_var = tk.StringVar(value=PORTS[0]["name"])
-        self.start_menu = ttk.Combobox(frame, textvariable=self.start_var, values=[p["name"] for p in PORTS], state="readonly", width=35, font=("Arial", 11))
+        self.start_menu = ttk.Combobox(
+            frame,
+            textvariable=self.start_var,
+            values=[p["name"] for p in PORTS],
+            state="readonly",
+            width=35,
+            font=("Arial", 11),
+        )
         self.start_menu.grid(row=0, column=1, padx=15, pady=8)
 
-        tk.Label(frame, text="Goal Port:", font=("Arial", 12), bg="#e8f0f8").grid(row=1, column=0, padx=15, pady=8, sticky="e")
+        tk.Label(
+            frame,
+            text="Goal Port:",
+            font=("Arial", 12),
+            bg="#e8f0f8",
+        ).grid(row=1, column=0, padx=15, pady=8, sticky="e")
         self.goal_var = tk.StringVar(value=PORTS[2]["name"])
-        self.goal_menu = ttk.Combobox(frame, textvariable=self.goal_var, values=[p["name"] for p in PORTS], state="readonly", width=35, font=("Arial", 11))
+        self.goal_menu = ttk.Combobox(
+            frame,
+            textvariable=self.goal_var,
+            values=[p["name"] for p in PORTS],
+            state="readonly",
+            width=35,
+            font=("Arial", 11),
+        )
         self.goal_menu.grid(row=1, column=1, padx=15, pady=8)
 
         # ── Buttons ──
         btn_frame = tk.Frame(root, bg="#e8f0f8")
         btn_frame.pack(pady=20)
 
-        tk.Button(btn_frame, text="Find Route", font=("Arial", 13, "bold"), bg="#27ae60", fg="white", width=18, height=2,
-                  command=self.find_route).pack(side=tk.LEFT, padx=20)
+        tk.Button(
+            btn_frame,
+            text="Find Route",
+            font=("Arial", 13, "bold"),
+            bg="#27ae60",
+            fg="white",
+            width=18,
+            height=2,
+            command=self.find_route,
+        ).pack(side=tk.LEFT, padx=20)
 
         tk.Button(btn_frame, text="Clear Map", font=("Arial", 13, "bold"), bg="#c0392b", fg="white", width=18, height=2,
                   command=self.clear_map).pack(side=tk.LEFT, padx=20)
@@ -78,11 +121,24 @@ class PathfinderGUI:
                   command=self.exit_app).pack(side=tk.LEFT, padx=20)
 
         # ── Status label ──
-        self.status_label = tk.Label(root, text="Ready – select ports and click 'Find Route'", font=("Arial", 11), bg="#e8f0f8", fg="#34495e")
+        self.status_label = tk.Label(
+            root,
+            text="Ready – select ports and click 'Find Route'",
+            font=("Arial", 11),
+            bg="#e8f0f8",
+            fg="#34495e",
+        )
         self.status_label.pack(pady=10)
 
         # ── Cost display box ──
-        self.cost_frame = tk.LabelFrame(root, text="Estimated Shipping Cost", font=("Arial", 12, "bold"), bg="#f8f9fa", padx=10, pady=10)
+        self.cost_frame = tk.LabelFrame(
+            root,
+            text="Estimated Shipping Cost",
+            font=("Arial", 12, "bold"),
+            bg="#f8f9fa",
+            padx=10,
+            pady=10,
+        )
         self.cost_frame.pack(fill=tk.X, padx=15, pady=5)
 
         self.cost_text = tk.Text(self.cost_frame, height=7, width=60, font=("Arial", 10), wrap=tk.WORD)

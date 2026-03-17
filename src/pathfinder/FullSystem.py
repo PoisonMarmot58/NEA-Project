@@ -1,3 +1,5 @@
+"""FullSystem module."""
+
 import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
@@ -19,7 +21,10 @@ from pathfinder.algorithms.CostCalculator import RouteCostEstimator
 #                     CONFIG
 # ────────────────────────────────────────────────
 
-GRID_FILE = r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
+GRID_FILE = (
+    r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2"
+    r"\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
+)
 PORTS_FILE = Path(__file__).resolve().parent / "data" / "ports_user_calibrated.json"
 
 SHIP_PROFILES = {
@@ -109,7 +114,9 @@ class PathfinderGUI:
             self.ports,
             key=lambda p: (p.get("country", "").lower(), p.get("name", "").lower())
         )
-        self.port_labels = [f"{p.get('country', 'Unknown')} - {p['name']}" for p in self.port_options]
+        self.port_labels = [
+            f"{p.get('country', 'Unknown')} - {p['name']}" for p in self.port_options
+        ]
         self.label_to_port = {label: port for label, port in zip(self.port_labels, self.port_options)}
         self.root.title("Europe Sea Route Finder")
         self.root.geometry("1800x1050")
@@ -130,31 +137,70 @@ class PathfinderGUI:
         # Load grid and pathfinder
         self.load_grid()
 
-        self.selected_ship_profile = self.ship_profile_names[2] if len(self.ship_profile_names) >= 3 else self.ship_profile_names[0]
+        self.selected_ship_profile = (
+            self.ship_profile_names[2]
+            if len(self.ship_profile_names) >= 3
+            else self.ship_profile_names[0]
+        )
         self.cost_estimator = self.build_cost_estimator(self.selected_ship_profile)
 
         # ── Header ──
-        tk.Label(root, text="Sea Route Pathfinder", font=("Arial", 22, "bold"), bg="#e8f0f8", fg="#2c3e50").pack(pady=15)
+        tk.Label(
+            root,
+            text="Sea Route Pathfinder",
+            font=("Arial", 22, "bold"),
+            bg="#e8f0f8",
+            fg="#2c3e50",
+        ).pack(pady=15)
 
         # ── Port selection ──
         frame = tk.Frame(root, bg="#e8f0f8")
         frame.pack(pady=10)
 
-        tk.Label(frame, text="Start Port:", font=("Arial", 16, "bold"), bg="#e8f0f8").grid(row=0, column=0, padx=22, pady=12, sticky="e")
+        tk.Label(
+            frame,
+            text="Start Port:",
+            font=("Arial", 16, "bold"),
+            bg="#e8f0f8",
+        ).grid(row=0, column=0, padx=22, pady=12, sticky="e")
         self.start_var = tk.StringVar(value=self.port_labels[0])
-        self.start_menu = ttk.Combobox(frame, textvariable=self.start_var, values=self.port_labels, state="normal", width=64, style="StartGoal.TCombobox")
+        self.start_menu = ttk.Combobox(
+            frame,
+            textvariable=self.start_var,
+            values=self.port_labels,
+            state="normal",
+            width=64,
+            style="StartGoal.TCombobox",
+        )
         self.start_menu.configure(font=("Arial", 44, "bold"))
         self.start_menu.grid(row=0, column=1, padx=22, pady=12)
         self.enable_port_autocomplete(self.start_menu, self.start_var)
 
-        tk.Label(frame, text="Goal Port:", font=("Arial", 16, "bold"), bg="#e8f0f8").grid(row=1, column=0, padx=22, pady=12, sticky="e")
+        tk.Label(
+            frame,
+            text="Goal Port:",
+            font=("Arial", 16, "bold"),
+            bg="#e8f0f8",
+        ).grid(row=1, column=0, padx=22, pady=12, sticky="e")
         self.goal_var = tk.StringVar(value=self.port_labels[1])
-        self.goal_menu = ttk.Combobox(frame, textvariable=self.goal_var, values=self.port_labels, state="normal", width=64, style="StartGoal.TCombobox")
+        self.goal_menu = ttk.Combobox(
+            frame,
+            textvariable=self.goal_var,
+            values=self.port_labels,
+            state="normal",
+            width=64,
+            style="StartGoal.TCombobox",
+        )
         self.goal_menu.configure(font=("Arial", 44, "bold"))
         self.goal_menu.grid(row=1, column=1, padx=22, pady=12)
         self.enable_port_autocomplete(self.goal_menu, self.goal_var)
 
-        tk.Label(frame, text="Ship Profile:", font=("Arial", 16, "bold"), bg="#e8f0f8").grid(row=2, column=0, padx=22, pady=12, sticky="e")
+        tk.Label(
+            frame,
+            text="Ship Profile:",
+            font=("Arial", 16, "bold"),
+            bg="#e8f0f8",
+        ).grid(row=2, column=0, padx=22, pady=12, sticky="e")
         self.ship_profile_var = tk.StringVar(value=self.selected_ship_profile)
         self.ship_profile_menu = ttk.Combobox(
             frame,
@@ -173,8 +219,16 @@ class PathfinderGUI:
         btn_frame = tk.Frame(root, bg="#e8f0f8")
         btn_frame.pack(pady=20)
 
-        tk.Button(btn_frame, text="Find Route", font=("Arial", 13, "bold"), bg="#27ae60", fg="white", width=18, height=2,
-                  command=self.find_route).pack(side=tk.LEFT, padx=20)
+        tk.Button(
+            btn_frame,
+            text="Find Route",
+            font=("Arial", 13, "bold"),
+            bg="#27ae60",
+            fg="white",
+            width=18,
+            height=2,
+            command=self.find_route,
+        ).pack(side=tk.LEFT, padx=20)
 
         tk.Button(btn_frame, text="Clear Map", font=("Arial", 13, "bold"), bg="#c0392b", fg="white", width=18, height=2,
                   command=self.clear_map).pack(side=tk.LEFT, padx=20)
@@ -183,14 +237,35 @@ class PathfinderGUI:
                   command=self.exit_app).pack(side=tk.LEFT, padx=20)
 
         # ── Status label ──
-        self.status_label = tk.Label(root, text="Ready – select ports and click 'Find Route'", font=("Arial", 15), bg="#e8f0f8", fg="#34495e")
+        self.status_label = tk.Label(
+            root,
+            text="Ready – select ports and click 'Find Route'",
+            font=("Arial", 15),
+            bg="#e8f0f8",
+            fg="#34495e",
+        )
         self.status_label.pack(pady=10)
 
         # ── Cost display box ──
-        self.cost_frame = tk.LabelFrame(root, text="Estimated Shipping Cost", font=("Arial", 17, "bold"), bg="#f8f9fa", padx=18, pady=18)
+        self.cost_frame = tk.LabelFrame(
+            root,
+            text="Estimated Shipping Cost",
+            font=("Arial", 17, "bold"),
+            bg="#f8f9fa",
+            padx=18,
+            pady=18,
+        )
         self.cost_frame.pack(fill=tk.X, padx=15, pady=5)
 
-        self.cost_text = tk.Text(self.cost_frame, height=14, width=132, font=("Arial", 15), wrap=tk.WORD, padx=10, pady=10)
+        self.cost_text = tk.Text(
+            self.cost_frame,
+            height=14,
+            width=132,
+            font=("Arial", 15),
+            wrap=tk.WORD,
+            padx=10,
+            pady=10,
+        )
         self.cost_text.pack(fill=tk.BOTH, expand=True)
         self.cost_text.insert(tk.END, "Cost estimate will appear here after finding a route.")
         self.cost_text.config(state="disabled")
@@ -552,8 +627,16 @@ class PathfinderGUI:
 
         # Debugging output: show raw vs snapped coords and grid cell values
         try:
-            print(f"DEBUG: {start_name} raw={raw_start} val={self.grid.data[raw_start[0], raw_start[1]]} -> snapped={start} val={self.grid.data[start[0], start[1]]}")
-            print(f"DEBUG: {goal_name} raw={raw_goal} val={self.grid.data[raw_goal[0], raw_goal[1]]} -> snapped={goal} val={self.grid.data[goal[0], goal[1]]}")
+            print(
+                f"DEBUG: {start_name} raw={raw_start} "
+                f"val={self.grid.data[raw_start[0], raw_start[1]]} -> "
+                f"snapped={start} val={self.grid.data[start[0], start[1]]}"
+            )
+            print(
+                f"DEBUG: {goal_name} raw={raw_goal} "
+                f"val={self.grid.data[raw_goal[0], raw_goal[1]]} -> "
+                f"snapped={goal} val={self.grid.data[goal[0], goal[1]]}"
+            )
         except Exception:
             pass
 

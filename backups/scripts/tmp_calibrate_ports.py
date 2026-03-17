@@ -1,4 +1,6 @@
-﻿import json, numpy as np
+﻿"""Temporary calibration helper script."""
+
+import json, numpy as np
 from pathlib import Path
 from scipy.ndimage import distance_transform_edt
 

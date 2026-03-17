@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """
-Interactive Coordinate Picker for Control Points
+Coordinate picker for control points.
 Click on the map to get grid coordinates of major ports.
-Maintains a running list of selected control points.
+Keeps a running list of selected control points.
 Supports zooming and panning.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from matplotlib.widgets import Button
 import json
-from pathlib import Path
 
 try:
     import tkinter as tk
@@ -44,8 +42,13 @@ ax.grid(which='minor', color='gray', linestyle=':', linewidth=0.3, alpha=0.3)
 
 ax.set_xlabel('Column (X / Longitude)', fontsize=12, fontweight='bold')
 ax.set_ylabel('Row (Y / Latitude)', fontsize=12, fontweight='bold')
-ax.set_title('Interactive Control Point Picker\nClick to mark port locations | Right-click to remove | Scroll to zoom | Middle-drag to pan',
-             fontsize=14, fontweight='bold')
+ax.set_title(
+    'Interactive Control Point Picker\n'
+    'Click to mark port locations | Right-click to remove | '
+    'Scroll to zoom | Middle-drag to pan',
+    fontsize=14,
+    fontweight='bold',
+)
 
 # Legend
 water_patch = mpatches.Patch(color='#0000FF', label='Water')
@@ -244,27 +247,12 @@ instruction_text = ax.text(0.98, 0.02,
     bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8),
     family='monospace')
 
-print("\n" + "="*60)
-print("INTERACTIVE COORDINATE PICKER")
-print("="*60)
-print("\nInstructions:")
-print("  1. LEFT-CLICK on map to add a control point")
-print("     - Enter the port name when prompted")
-print("     - Red star marks the point")
-print("  2. RIGHT-CLICK near a star to remove it")
-print("  3. SCROLL WHEEL to zoom in/out (or use toolbar)")
-print("  4. MIDDLE-CLICK + DRAG to pan around")
-print("  5. Watch the status box (top-left) for feedback")
-print("  6. CLOSE the window when done")
-print("     - Points will be saved to 'user_control_points.json'")
-print("\nTips:")
-print("  - Zoom in 2-3x to see coastlines clearly")
-print("  - Click on WATER cells (blue), not land")
-print("  - Major ports to include: Rotterdam, Hamburg, Felixstowe, Southampton,")
-print("    Algeciras, Lisbon, Valencia, Barcelona, Genoa, Trieste, Naples,")
-print("    Piraeus, Izmir, Constanta, Gothenburg")
-print("  - Spread them across Europe for good interpolation coverage")
-print("="*60 + "\n")
+print("\nCoordinate picker")
+print("- Left-click: add/update point")
+print("- Right-click: remove nearest point")
+print("- Scroll: zoom")
+print("- Middle-drag: pan")
+print("Close the window to save to user_control_points.json\n")
 
 update_status()
 plt.tight_layout()

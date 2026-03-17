@@ -1,3 +1,5 @@
+"""MapToGrid module."""
+
 import numpy as np
 from PIL import Image
 import os
@@ -7,16 +9,19 @@ from scipy.interpolate import LinearNDInterpolator
 
 # CONFIGURATION
 
-IMAGE_PATH = r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2\Pathfinder Algorithm\Maps\MapOfEuropeNonNamed.png"
+IMAGE_PATH = (
+    r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2"
+    r"\Pathfinder Algorithm\Maps\MapOfEuropeNonNamed.png"
+)
 
 GRID_FILE = "BackupGrid.npy"
 GRID_WITH_PORTS_FILE = "FullGridOfEurope.npy"
 
 
-# CREATE BASIC GRID
+# Build the base grid
 
 def create_grid(image_path=IMAGE_PATH):
-    """Load image and create basic 2D grid"""
+    """Load the image and build a base 2D grid."""
     if not os.path.exists(image_path):
         print("ERROR: Image not found!")
         print("Path:", image_path)
@@ -44,7 +49,7 @@ def create_grid(image_path=IMAGE_PATH):
 
     return grid
 
-# DETECT POTENTIAL PORTS (coastline)
+# Detect coastline candidates
 
 def detect_potential_ports(grid, use_8_directions=False):
     """Find land pixels (1) adjacent to water (0) → mark as 3"""
@@ -118,10 +123,10 @@ def add_real_major_ports(grid, control_points_list, real_ports_list):
 
     return new_grid
 
-# MAIN PROGRAM
+# Main
 
 if __name__ == "__main__":
-    print("=== EUROPE PORT LOCATOR ===\n")
+    print("Europe port locator\n")
 
     #  Create or load basic grid
     if not os.path.exists(GRID_FILE):

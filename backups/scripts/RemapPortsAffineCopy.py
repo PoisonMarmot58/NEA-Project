@@ -1,4 +1,4 @@
-"""Create a remapped copy of ports.json using an affine lat/lon->grid transform."""
+"""Build a remapped copy of ports.json using an affine lat/lon-to-grid transform."""
 
 import json
 from pathlib import Path

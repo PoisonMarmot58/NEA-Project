@@ -1,3 +1,5 @@
+"""Astar module."""
+
 import numpy as np
 import heapq
 from typing import List, Tuple, Optional
@@ -130,7 +132,10 @@ class AStarPathfinder:
 #test
 
 if __name__ == "__main__":
-    grid = Grid(r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2\Pathfinder Algorithm\Data\FullGridOfEurope.npy")
+    grid = Grid(
+        r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2"
+        r"\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
+    )
     pathfinder = AStarPathfinder(grid)
 
 

@@ -1,4 +1,4 @@
-"""Create a comparison diagram for old vs recreated port coordinates."""
+"""Compare old and remapped port coordinates."""
 
 import argparse
 import json

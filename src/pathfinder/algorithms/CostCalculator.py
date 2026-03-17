@@ -1,3 +1,5 @@
+"""CostCalculator module."""
+
 import math
 
 class RouteCostEstimator:

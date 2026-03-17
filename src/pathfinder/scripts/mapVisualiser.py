@@ -1,9 +1,14 @@
+"""mapVisualiser module."""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 
 # Your file path
-NPY_PATH = r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
+NPY_PATH = (
+    r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2"
+    r"\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
+)
 
 print("Loading .npy file...")
 try:
@@ -34,7 +39,8 @@ ax1.set_title("Raw array values (grayscale)")
 ax1.axis('off')
 
 # Right: color-coded interpretation
-colors = ['#000000', '#444444', '#888888', '#FF0000', '#FF5555']  # 0 black, 1 dark gray, 2 light gray, 3 red, 4 bright red
+colors = ['#000000', '#444444', '#888888', '#FF0000', '#FF5555']
+# 0 black, 1 dark gray, 2 light gray, 3 red, 4 bright red
 cmap = ListedColormap(colors)
 
 # Clip values outside 0-4 to avoid index errors

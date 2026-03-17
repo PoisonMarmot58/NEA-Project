@@ -1,4 +1,4 @@
-"""Create a simplified map diagram and overlay port locations from a ports JSON file."""
+"""Render ports from a JSON file on a simplified map."""
 
 import argparse
 import json
@@ -16,7 +16,7 @@ DEFAULT_OUTPUT = ROOT / "ports_map_diagram.png"
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Create a simplified map diagram + ports from JSON and save as an image."
+        description="Render a simplified map with ports from JSON and save the image."
     )
     parser.add_argument("--grid", type=Path, default=DEFAULT_GRID, help="Path to .npy grid file")
     parser.add_argument("--ports", type=Path, default=DEFAULT_PORTS, help="Path to ports JSON file")
@@ -41,7 +41,7 @@ def parse_args():
 
 
 def load_ports(ports_path: Path):
-    # utf-8-sig gracefully handles files with or without BOM.
+    # utf-8-sig handles files with or without a BOM.
     with ports_path.open("r", encoding="utf-8-sig") as f:
         records = json.load(f)
 

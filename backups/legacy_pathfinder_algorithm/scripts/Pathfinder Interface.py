@@ -1,10 +1,15 @@
+"""Pathfinder Interface module."""
+
 # Console-based interface for Europe Sea Route Pathfinder
 
 from Astar import Grid, AStarPathfinder  
 
 #config
 
-GRID_FILE = r"C:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
+GRID_FILE = (
+    r"C:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2"
+    r"\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
+)
 
 
 PORTS = [

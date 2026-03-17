@@ -87,7 +87,7 @@ def parse_row_col(raw: str) -> Tuple[int, int] | None:
 
 
 def interactive_collect_controls(ports: List[dict], min_controls: int) -> Dict[str, Tuple[int, int]]:
-    print("\n=== Interactive Control Points ===")
+    print("\nControl points")
     print("Enter port names + coordinates as: row,col")
     print("Type 'list' to show ports, 'done' to finish, 'remove <port>' to delete one.\n")
 
@@ -290,7 +290,7 @@ def main() -> None:
     args.controls_out.parent.mkdir(parents=True, exist_ok=True)
     args.controls_out.write_text(json.dumps(controls_out_payload, indent=2) + "\n", encoding="utf-8")
 
-    print("\n=== Interpolation Complete ===")
+    print("\nInterpolation complete")
     print(f"Source ports: {args.source}")
     print(f"Output ports: {args.output}")
     print(f"Saved controls: {args.controls_out}")
