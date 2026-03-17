@@ -9,22 +9,19 @@ from collections import deque
 import json
 import sys
 from pathlib import Path
+import os
+from tkinter import filedialog
 
 # Ensure `src` directory is on sys.path so `import pathfinder` works
 # when running this file directly (as a script).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
 from pathfinder.algorithms.Astar import Grid, AStarPathfinder
 from pathfinder.algorithms.CostCalculator import RouteCostEstimator
 
-# ────────────────────────────────────────────────
-#                     CONFIG
-# ────────────────────────────────────────────────
-
-GRID_FILE = (
-    r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2"
-    r"\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
-)
+# config
+# The GRID file is resolved at runtime so the project can run on other machines.
+# The loader will check an environment variable, common repo locations, and
+# finally prompt the user to pick the file if necessary.
 PORTS_FILE = Path(__file__).resolve().parent / "data" / "ports_user_calibrated.json"
 
 SHIP_PROFILES = {
@@ -100,9 +97,7 @@ def load_ports_from_json(json_path):
 
 PORTS = load_ports_from_json(PORTS_FILE)
 
-# ────────────────────────────────────────────────
-#                    GUI APPLICATION
-# ────────────────────────────────────────────────
+#gui application
 
 class PathfinderGUI:
     def __init__(self, root):
@@ -124,10 +119,10 @@ class PathfinderGUI:
         self.root.configure(bg="#e8f0f8")
 
         self.style = ttk.Style()
-        self.style.configure("Port.TCombobox", font=("Arial", 38, "bold"))
-        self.style.configure("StartGoal.TCombobox", font=("Arial", 44, "bold"))
-        self.style.configure("Large.TCombobox", font=("Arial", 26))
-        self.root.option_add("*TCombobox*Listbox.font", ("Arial", 24))
+        self.style.configure("Port.TCombobox", font=("Arial", 18, "bold"))
+        self.style.configure("StartGoal.TCombobox", font=("Arial", 18, "bold"))
+        self.style.configure("Large.TCombobox", font=("Arial", 14))
+        self.root.option_add("*TCombobox*Listbox.font", ("Arial", 14))
         try:
             # Start maximized on Windows for a larger map workspace.
             self.root.state("zoomed")
@@ -148,132 +143,132 @@ class PathfinderGUI:
         tk.Label(
             root,
             text="Sea Route Pathfinder",
-            font=("Arial", 22, "bold"),
+            font=("Arial", 17, "bold"),
             bg="#e8f0f8",
             fg="#2c3e50",
-        ).pack(pady=15)
+        ).pack(pady=6)
 
         # ── Port selection ──
         frame = tk.Frame(root, bg="#e8f0f8")
-        frame.pack(pady=10)
+        frame.pack(pady=4)
 
         tk.Label(
             frame,
             text="Start Port:",
-            font=("Arial", 16, "bold"),
+            font=("Arial", 12, "bold"),
             bg="#e8f0f8",
-        ).grid(row=0, column=0, padx=22, pady=12, sticky="e")
+        ).grid(row=0, column=0, padx=10, pady=4, sticky="e")
         self.start_var = tk.StringVar(value=self.port_labels[0])
         self.start_menu = ttk.Combobox(
             frame,
             textvariable=self.start_var,
             values=self.port_labels,
             state="normal",
-            width=64,
+            width=58,
             style="StartGoal.TCombobox",
         )
-        self.start_menu.configure(font=("Arial", 44, "bold"))
-        self.start_menu.grid(row=0, column=1, padx=22, pady=12)
+        self.start_menu.configure(font=("Arial", 18, "bold"))
+        self.start_menu.grid(row=0, column=1, padx=10, pady=4)
         self.enable_port_autocomplete(self.start_menu, self.start_var)
 
         tk.Label(
             frame,
             text="Goal Port:",
-            font=("Arial", 16, "bold"),
+            font=("Arial", 12, "bold"),
             bg="#e8f0f8",
-        ).grid(row=1, column=0, padx=22, pady=12, sticky="e")
+        ).grid(row=1, column=0, padx=10, pady=4, sticky="e")
         self.goal_var = tk.StringVar(value=self.port_labels[1])
         self.goal_menu = ttk.Combobox(
             frame,
             textvariable=self.goal_var,
             values=self.port_labels,
             state="normal",
-            width=64,
+            width=58,
             style="StartGoal.TCombobox",
         )
-        self.goal_menu.configure(font=("Arial", 44, "bold"))
-        self.goal_menu.grid(row=1, column=1, padx=22, pady=12)
+        self.goal_menu.configure(font=("Arial", 18, "bold"))
+        self.goal_menu.grid(row=1, column=1, padx=10, pady=4)
         self.enable_port_autocomplete(self.goal_menu, self.goal_var)
 
         tk.Label(
             frame,
             text="Ship Profile:",
-            font=("Arial", 16, "bold"),
+            font=("Arial", 12, "bold"),
             bg="#e8f0f8",
-        ).grid(row=2, column=0, padx=22, pady=12, sticky="e")
+        ).grid(row=2, column=0, padx=10, pady=4, sticky="e")
         self.ship_profile_var = tk.StringVar(value=self.selected_ship_profile)
         self.ship_profile_menu = ttk.Combobox(
             frame,
             textvariable=self.ship_profile_var,
             values=self.ship_profile_names,
             state="normal",
-            width=64,
+            width=58,
             style="StartGoal.TCombobox",
         )
         # Match Start/Goal combobox font/size so all three look identical
-        self.ship_profile_menu.configure(font=("Arial", 44, "bold"))
-        self.ship_profile_menu.grid(row=2, column=1, padx=22, pady=12)
+        self.ship_profile_menu.configure(font=("Arial", 18, "bold"))
+        self.ship_profile_menu.grid(row=2, column=1, padx=10, pady=4)
         self.enable_ship_profile_autocomplete(self.ship_profile_menu, self.ship_profile_var)
 
         # ── Buttons ──
         btn_frame = tk.Frame(root, bg="#e8f0f8")
-        btn_frame.pack(pady=20)
+        btn_frame.pack(pady=8)
 
         tk.Button(
             btn_frame,
             text="Find Route",
-            font=("Arial", 13, "bold"),
+            font=("Arial", 11, "bold"),
             bg="#27ae60",
             fg="white",
-            width=18,
-            height=2,
+            width=14,
+            height=1,
             command=self.find_route,
-        ).pack(side=tk.LEFT, padx=20)
+        ).pack(side=tk.LEFT, padx=10)
 
-        tk.Button(btn_frame, text="Clear Map", font=("Arial", 13, "bold"), bg="#c0392b", fg="white", width=18, height=2,
-                  command=self.clear_map).pack(side=tk.LEFT, padx=20)
+        tk.Button(btn_frame, text="Clear Map", font=("Arial", 11, "bold"), bg="#c0392b", fg="white", width=14, height=1,
+                  command=self.clear_map).pack(side=tk.LEFT, padx=10)
 
-        tk.Button(btn_frame, text="Exit", font=("Arial", 13, "bold"), bg="#34495e", fg="white", width=18, height=2,
-                  command=self.exit_app).pack(side=tk.LEFT, padx=20)
+        tk.Button(btn_frame, text="Exit", font=("Arial", 11, "bold"), bg="#34495e", fg="white", width=14, height=1,
+                  command=self.exit_app).pack(side=tk.LEFT, padx=10)
 
         # ── Status label ──
         self.status_label = tk.Label(
             root,
             text="Ready – select ports and click 'Find Route'",
-            font=("Arial", 15),
+            font=("Arial", 12),
             bg="#e8f0f8",
             fg="#34495e",
         )
-        self.status_label.pack(pady=10)
+        self.status_label.pack(pady=4)
 
         # ── Cost display box ──
         self.cost_frame = tk.LabelFrame(
             root,
             text="Estimated Shipping Cost",
-            font=("Arial", 17, "bold"),
+            font=("Arial", 13, "bold"),
             bg="#f8f9fa",
-            padx=18,
-            pady=18,
+            padx=10,
+            pady=8,
         )
-        self.cost_frame.pack(fill=tk.X, padx=15, pady=5)
+        self.cost_frame.pack(fill=tk.X, padx=12, pady=3)
 
         self.cost_text = tk.Text(
             self.cost_frame,
-            height=14,
+            height=7,
             width=132,
-            font=("Arial", 15),
+            font=("Arial", 12),
             wrap=tk.WORD,
-            padx=10,
-            pady=10,
+            padx=8,
+            pady=6,
         )
         self.cost_text.pack(fill=tk.BOTH, expand=True)
         self.cost_text.insert(tk.END, "Cost estimate will appear here after finding a route.")
         self.cost_text.config(state="disabled")
 
         # ── Matplotlib canvas for map ──
-        self.fig, self.ax = plt.subplots(figsize=(16.5, 10.0))
+        self.fig, self.ax = plt.subplots(figsize=(18.5, 12.0))
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
         self.toolbar = NavigationToolbar2Tk(self.canvas, root)
         self.toolbar.update()
 
@@ -284,8 +279,47 @@ class PathfinderGUI:
         self.draw_blank_map()
 
     def load_grid(self):
+        # Determine grid file path
+        env_path = os.environ.get("GRID_FILE") or os.environ.get("PATHFINDER_GRID_FILE")
+        candidates = []
+        if env_path:
+            candidates.append(Path(env_path))
+
+        # Project root (two parents up from this file)
+        project_root = Path(__file__).resolve().parents[2]
+        # Common places in this repository where the full grid may be stored
+        candidates.extend([
+            project_root / "backups" / "data" / "legacy_root" / "FullGridOfEurope.npy",
+            project_root / "backups" / "data" / "FullGridOfEurope.npy",
+            Path(__file__).resolve().parent / "data" / "FullGridOfEurope.npy",
+        ])
+
+        grid_file = None
+        for p in candidates:
+            if p and p.exists():
+                grid_file = p
+                break
+
+        if grid_file is None:
+            # Ask the user to locate the .npy grid file
+            messagebox.showinfo(
+                "Locate Grid File",
+                "Full grid file not found automatically. Please locate the FullGridOfEurope.npy file."
+            )
+            chosen = filedialog.askopenfilename(
+                title="Select FullGridOfEurope.npy",
+                filetypes=[("NumPy files", "*.npy"), ("All files", "*")],
+            )
+            if chosen:
+                grid_file = Path(chosen)
+
+        if grid_file is None:
+            messagebox.showerror("Load Error", "Could not locate a grid file. Exiting.")
+            self.root.quit()
+            return
+
         try:
-            self.grid = Grid(GRID_FILE)
+            self.grid = Grid(str(grid_file))
             self.pathfinder = AStarPathfinder(self.grid)
         except Exception as e:
             messagebox.showerror("Load Error", f"Could not load grid:\n{e}")
@@ -734,8 +768,8 @@ class PathfinderGUI:
         # Route line + markers
         rows, cols = zip(*path)
         self.ax.plot(cols, rows, 'r-', linewidth=3, alpha=0.9, label='Sea Route')
-        self.ax.plot(cols[0], rows[0], 'go', markersize=14, label=f'Start: {start_name}')
-        self.ax.plot(cols[-1], rows[-1], 'yo', markersize=14, label=f'Goal: {goal_name}')
+        self.ax.plot(cols[0], rows[0], 'o', color='red', markersize=14, label=f'Start: {start_name}')
+        self.ax.plot(cols[-1], rows[-1], 'o', color='purple', markersize=14, label=f'Goal: {goal_name}')
 
         self.ax.set_title(f"Route: {start_name} → {goal_name}  ({len(path)-1} steps)", fontsize=14)
         self.ax.legend(loc='upper right', fontsize=10)
@@ -768,9 +802,7 @@ class PathfinderGUI:
         self.canvas.draw_idle()
 
 
-# ────────────────────────────────────────────────
-#                     RUN THE GUI
-# ────────────────────────────────────────────────
+# run the program
 
 if __name__ == "__main__":
     root = tk.Tk()
