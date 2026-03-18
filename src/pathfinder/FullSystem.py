@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import cm, colors
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from collections import deque
 import json
@@ -17,6 +18,7 @@ from tkinter import filedialog
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pathfinder.algorithms.Astar import Grid, AStarPathfinder
 from pathfinder.algorithms.CostCalculator import RouteCostEstimator
+from pathfinder.algorithms.WeatherEstimator import WeatherImpactEstimator
 
 # config
 # The GRID file is resolved at runtime so the project can run on other machines.
@@ -231,6 +233,11 @@ class PathfinderGUI:
         tk.Button(btn_frame, text="Exit", font=("Arial", 11, "bold"), bg="#34495e", fg="white", width=14, height=1,
                   command=self.exit_app).pack(side=tk.LEFT, padx=10)
 
+        # Weather markers toggle
+        self.show_weather_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(btn_frame, text="Show weather markers", variable=self.show_weather_var, bg="#e8f0f8",
+                   font=("Arial", 11), command=lambda: self.canvas.draw_idle()).pack(side=tk.LEFT, padx=12)
+
         # ── Status label ──
         self.status_label = tk.Label(
             root,
@@ -240,22 +247,24 @@ class PathfinderGUI:
             fg="#34495e",
         )
         self.status_label.pack(pady=4)
+        # ── Info panels: cost (left) and weather (right) ──
+        info_frame = tk.Frame(root, bg="#e8f0f8")
+        info_frame.pack(fill=tk.X, padx=12, pady=3)
 
-        # ── Cost display box ──
         self.cost_frame = tk.LabelFrame(
-            root,
+            info_frame,
             text="Estimated Shipping Cost",
             font=("Arial", 13, "bold"),
             bg="#f8f9fa",
             padx=10,
             pady=8,
         )
-        self.cost_frame.pack(fill=tk.X, padx=12, pady=3)
+        self.cost_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
 
         self.cost_text = tk.Text(
             self.cost_frame,
             height=7,
-            width=132,
+            width=88,
             font=("Arial", 12),
             wrap=tk.WORD,
             padx=8,
@@ -264,6 +273,29 @@ class PathfinderGUI:
         self.cost_text.pack(fill=tk.BOTH, expand=True)
         self.cost_text.insert(tk.END, "Cost estimate will appear here after finding a route.")
         self.cost_text.config(state="disabled")
+
+        self.weather_frame = tk.LabelFrame(
+            info_frame,
+            text="Weather Samples",
+            font=("Arial", 13, "bold"),
+            bg="#f8f9fa",
+            padx=10,
+            pady=8,
+        )
+        self.weather_frame.pack(side=tk.RIGHT, fill=tk.BOTH)
+
+        self.weather_text = tk.Text(
+            self.weather_frame,
+            height=7,
+            width=44,
+            font=("Arial", 11),
+            wrap=tk.WORD,
+            padx=8,
+            pady=6,
+        )
+        self.weather_text.pack(fill=tk.BOTH, expand=True)
+        self.weather_text.insert(tk.END, "Weather samples will appear here after finding a route.")
+        self.weather_text.config(state="disabled")
 
         # ── Matplotlib canvas for map ──
         self.fig, self.ax = plt.subplots(figsize=(18.5, 12.0))
@@ -696,6 +728,48 @@ class PathfinderGUI:
                 # Calculate cost
                 cost_data = self.cost_estimator.estimate(length)
 
+                # Apply weather impact: estimate multiplier and show summary
+                try:
+                    weather = WeatherImpactEstimator()
+                    # pass the cost_estimator so the estimator can use ship average speed
+                    res = weather.estimate_path_impact(path, ship_profile=self.cost_estimator)
+                    if isinstance(res, tuple) and len(res) == 3:
+                        multiplier, weather_summary, weather_samples = res
+                    else:
+                        multiplier, weather_summary = res
+                        weather_samples = None
+                except Exception:
+                    multiplier, weather_summary = 1.0, "Weather check failed"
+                    weather_samples = None
+
+                if multiplier != 1.0:
+                    # Adjust time-based components while keeping distance unchanged
+                    base_time_days = cost_data.get("time_days", 0)
+                    adjusted_time_days = round(base_time_days * multiplier, 1)
+
+                    # Recompute fuel and operating costs using adjusted time
+                    fuel_cost = adjusted_time_days * self.cost_estimator.fuel_consumption_tpd * self.cost_estimator.fuel_price_per_tonne
+                    operating_cost = adjusted_time_days * self.cost_estimator.daily_operating_cost
+                    port_fees = cost_data.get("port_fees_usd", 0)
+                    subtotal = fuel_cost + operating_cost + port_fees
+                    contingency = subtotal * self.cost_estimator.contingency_percent
+                    total = subtotal + contingency
+
+                    # Update displayed cost data
+                    cost_data.update({
+                        "time_days": adjusted_time_days,
+                        "fuel_cost_usd": round(fuel_cost),
+                        "operating_cost_usd": round(operating_cost),
+                        "port_fees_usd": round(port_fees),
+                        "contingency_usd": round(contingency),
+                        "total_cost_usd": round(total),
+                        "formatted_total": f"${round(total):,}",
+                        "weather_summary": weather_summary,
+                        "weather_multiplier": round(multiplier, 3),
+                    })
+                else:
+                    cost_data["weather_summary"] = weather_summary
+
                 if "error" in cost_data:
                     cost_text = (
                         f"Route: {start_name} → {goal_name}\n"
@@ -726,13 +800,44 @@ class PathfinderGUI:
                         f"{divider}\n"
                         f"TOTAL ESTIMATED COST: {total}"
                     )
+                # Append weather impact info when available
+                if cost_data.get("weather_summary"):
+                    cost_text += "\n\nWeather impact:\n"
+                    cost_text += f"  {cost_data.get('weather_summary')}\n"
+                    if cost_data.get("weather_multiplier"):
+                        cost_text += f"  Time multiplier: {cost_data.get('weather_multiplier')}x\n"
 
                 self.cost_text.config(state="normal")
                 self.cost_text.delete(1.0, tk.END)
                 self.cost_text.insert(tk.END, cost_text)
                 self.cost_text.config(state="disabled")
 
-                self.draw_route(path, start, goal, start_name, goal_name)
+                # Populate weather details panel
+                try:
+                    self.weather_text.config(state="normal")
+                    self.weather_text.delete(1.0, tk.END)
+                    if weather_samples:
+                        lines = []
+                        for s in weather_samples:
+                            idx = s.get('path_index')
+                            eta = s.get('eta_hours')
+                            wk = s.get('wind_knots')
+                            wd = s.get('wind_dir')
+                            wv = s.get('wave_m')
+                            pen = s.get('penalty_fraction')
+                            lines.append(f"Sample {idx}: ETA+{eta}h — wind {wk:.1f} kt @ {int(wd) if wd is not None else 'N/A'}° — wave {wv:.2f} m — +{int(round(pen*100))}%")
+                        self.weather_text.insert(tk.END, "\n".join(lines))
+                    else:
+                        self.weather_text.insert(tk.END, "No weather samples available.")
+                except Exception:
+                    self.weather_text.insert(tk.END, "Weather display failed")
+                finally:
+                    try:
+                        self.weather_text.config(state="disabled")
+                    except Exception:
+                        pass
+
+                self.draw_route(path, start, goal, start_name, goal_name, weather_samples=weather_samples)
             else:
                 self.status_label.config(text="No route found")
                 messagebox.showinfo("Result", "No valid sea route between these ports.")
@@ -749,7 +854,7 @@ class PathfinderGUI:
             self.cost_text.insert(tk.END, f"Error occurred:\n{e}")
             self.cost_text.config(state="disabled")
 
-    def draw_route(self, path, start, goal, start_name, goal_name):
+    def draw_route(self, path, start, goal, start_name, goal_name, weather_samples=None):
         self.ax.clear()
 
         # Build a true-color background so only matching cells are colored.
@@ -770,6 +875,34 @@ class PathfinderGUI:
         self.ax.plot(cols, rows, 'r-', linewidth=3, alpha=0.9, label='Sea Route')
         self.ax.plot(cols[0], rows[0], 'o', color='red', markersize=14, label=f'Start: {start_name}')
         self.ax.plot(cols[-1], rows[-1], 'o', color='purple', markersize=14, label=f'Goal: {goal_name}')
+        # Draw weather impact samples if provided
+        if weather_samples and getattr(self, 'show_weather_var', None) and self.show_weather_var.get():
+            cols_s = []
+            rows_s = []
+            pens = []
+            for s in weather_samples:
+                gc = s.get('grid_cell')
+                if gc and isinstance(gc, (list, tuple)) and len(gc) == 2:
+                    r, c = gc
+                else:
+                    pi = s.get('path_index')
+                    if pi is not None and pi < len(path):
+                        r, c = path[pi]
+                    else:
+                        continue
+                cols_s.append(c)
+                rows_s.append(r)
+                pens.append(s.get('penalty_fraction', 0.0))
+
+            if pens:
+                vmax = max(pens) if pens else 0.01
+                norm = colors.Normalize(vmin=0.0, vmax=max(vmax, 0.001))
+                sc = self.ax.scatter(cols_s, rows_s, c=pens, cmap='Reds', norm=norm, s=[60 + p * 1200 for p in pens], edgecolor='black', alpha=0.9, zorder=5)
+                # annotate each sample with percent increase
+                for x, y, p in zip(cols_s, rows_s, pens):
+                    pct = int(round(p * 100))
+                    if pct > 0:
+                        self.ax.text(x, y - 6, f'+{pct}%', color='white', fontsize=9, ha='center', va='bottom', weight='bold', zorder=6)
 
         self.ax.set_title(f"Route: {start_name} → {goal_name}  ({len(path)-1} steps)", fontsize=14)
         self.ax.legend(loc='upper right', fontsize=10)
