@@ -12,6 +12,9 @@ import sys
 from pathlib import Path
 import os
 from tkinter import filedialog
+import threading
+import time
+import math
 
 # Ensure `src` directory is on sys.path so `import pathfinder` works
 # when running this file directly (as a script).
@@ -115,6 +118,15 @@ class PathfinderGUI:
             f"{p.get('country', 'Unknown')} - {p['name']}" for p in self.port_options
         ]
         self.label_to_port = {label: port for label, port in zip(self.port_labels, self.port_options)}
+
+        def _label_for_port(port_name, fallback_label):
+            for label, port in self.label_to_port.items():
+                if port.get('name') == port_name:
+                    return label
+            return fallback_label
+
+        default_start_label = _label_for_port("Felixstowe", self.port_labels[0])
+        default_goal_label = _label_for_port("Bremerhaven", self.port_labels[1])
         self.root.title("Europe Sea Route Finder")
         self.root.geometry("1800x1050")
         self.root.minsize(1300, 860)
@@ -140,6 +152,8 @@ class PathfinderGUI:
             else self.ship_profile_names[0]
         )
         self.cost_estimator = self.build_cost_estimator(self.selected_ship_profile)
+        # Reuse one estimator so HTTP/session and weather cache are shared between routes.
+        self.weather_estimator = WeatherImpactEstimator()
 
         # ── Header ──
         tk.Label(
@@ -160,7 +174,7 @@ class PathfinderGUI:
             font=("Arial", 12, "bold"),
             bg="#e8f0f8",
         ).grid(row=0, column=0, padx=10, pady=4, sticky="e")
-        self.start_var = tk.StringVar(value=self.port_labels[0])
+        self.start_var = tk.StringVar(value=default_start_label)
         self.start_menu = ttk.Combobox(
             frame,
             textvariable=self.start_var,
@@ -179,7 +193,7 @@ class PathfinderGUI:
             font=("Arial", 12, "bold"),
             bg="#e8f0f8",
         ).grid(row=1, column=0, padx=10, pady=4, sticky="e")
-        self.goal_var = tk.StringVar(value=self.port_labels[1])
+        self.goal_var = tk.StringVar(value=default_goal_label)
         self.goal_menu = ttk.Combobox(
             frame,
             textvariable=self.goal_var,
@@ -250,6 +264,9 @@ class PathfinderGUI:
         # ── Info panels: cost (left) and weather (right) ──
         info_frame = tk.Frame(root, bg="#e8f0f8")
         info_frame.pack(fill=tk.X, padx=12, pady=3)
+        # Use grid inside info_frame so cost and weather frames can share width equally
+        info_frame.columnconfigure(0, weight=1, uniform="info")
+        info_frame.columnconfigure(1, weight=1, uniform="info")
 
         self.cost_frame = tk.LabelFrame(
             info_frame,
@@ -259,12 +276,12 @@ class PathfinderGUI:
             padx=10,
             pady=8,
         )
-        self.cost_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
+        self.cost_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 8), pady=0)
 
         self.cost_text = tk.Text(
             self.cost_frame,
-            height=7,
-            width=88,
+            height=12,
+            width=60,
             font=("Arial", 12),
             wrap=tk.WORD,
             padx=8,
@@ -282,13 +299,15 @@ class PathfinderGUI:
             padx=10,
             pady=8,
         )
-        self.weather_frame.pack(side=tk.RIGHT, fill=tk.BOTH)
+        # Place weather panel in the info_frame grid to match cost frame size
+        self.weather_frame.grid(row=0, column=1, sticky='nsew', padx=(8, 0), pady=0)
 
+        # Larger, clearer weather text area for readability
         self.weather_text = tk.Text(
             self.weather_frame,
-            height=7,
-            width=44,
-            font=("Arial", 11),
+            height=12,
+            width=60,
+            font=("Arial", 12),
             wrap=tk.WORD,
             padx=8,
             pady=6,
@@ -306,6 +325,22 @@ class PathfinderGUI:
 
         # Mouse-wheel zoom for fast close-up inspection of short routes.
         self.canvas.mpl_connect("scroll_event", self.on_scroll_zoom)
+        # Left-click drag panning for intuitive map navigation.
+        self.canvas.mpl_connect("button_press_event", self.on_pan_press)
+        self.canvas.mpl_connect("motion_notify_event", self.on_pan_drag)
+        self.canvas.mpl_connect("button_release_event", self.on_pan_release)
+
+        self._pan_active = False
+        self._pan_last = None
+        self._view_target = None
+        self._view_animating = False
+        self._view_anim_after_id = None
+        self._view_last_tick = time.perf_counter()
+        self._last_view_input = self._view_last_tick
+        self._view_fps = 120
+        self._view_tau = 0.045
+        self._last_interaction_draw = 0.0
+        self._interaction_draw_interval = 1.0 / 120.0
 
         # Start with blank map (no base map shown on startup)
         self.draw_blank_map()
@@ -723,24 +758,48 @@ class PathfinderGUI:
 
             if path:
                 length = len(path) - 1
-                self.status_label.config(text=f"Route found! {length} steps")
+                search_mode = getattr(self.pathfinder, 'last_search_mode', None)
+                if search_mode == 'fallback':
+                    self.status_label.config(text=f"Route found (robust fallback)! {length} steps")
+                else:
+                    self.status_label.config(text=f"Route found! {length} steps")
 
                 # Calculate cost
                 cost_data = self.cost_estimator.estimate(length)
 
-                # Apply weather impact: estimate multiplier and show summary
+                # Start a background weather fetch so the UI doesn't block.
+                # We display base cost now, then update the UI when weather completes.
                 try:
-                    weather = WeatherImpactEstimator()
-                    # pass the cost_estimator so the estimator can use ship average speed
-                    res = weather.estimate_path_impact(path, ship_profile=self.cost_estimator)
-                    if isinstance(res, tuple) and len(res) == 3:
-                        multiplier, weather_summary, weather_samples = res
+                    if search_mode == 'fallback':
+                        self.status_label.config(text="Querying weather... (route used robust fallback)")
                     else:
-                        multiplier, weather_summary = res
-                        weather_samples = None
-                except Exception:
-                    multiplier, weather_summary = 1.0, "Weather check failed"
+                        self.status_label.config(text="Querying weather...")
+                    t = threading.Thread(
+                        target=self._fetch_weather_and_apply,
+                        args=(path, start, goal, start_name, goal_name, cost_data),
+                        daemon=True,
+                    )
+                    t.start()
+                    # set safe defaults until background thread updates the UI
+                    multiplier = 1.0
+                    weather_summary = "Weather: fetching..."
                     weather_samples = None
+                except Exception:
+                    # If threading fails, fall back to a synchronous call.
+                    try:
+                        res = self.weather_estimator.estimate_path_impact(
+                            path,
+                            ship_profile=self.cost_estimator,
+                            detailed=getattr(self, 'show_weather_var', None) and self.show_weather_var.get(),
+                        )
+                        if isinstance(res, tuple) and len(res) == 3:
+                            multiplier, weather_summary, weather_samples = res
+                        else:
+                            multiplier, weather_summary = res
+                            weather_samples = None
+                    except Exception:
+                        multiplier, weather_summary = 1.0, "Weather check failed"
+                        weather_samples = None
 
                 if multiplier != 1.0:
                     # Adjust time-based components while keeping distance unchanged
@@ -800,40 +859,75 @@ class PathfinderGUI:
                         f"{divider}\n"
                         f"TOTAL ESTIMATED COST: {total}"
                     )
-                # Append weather impact info when available
-                if cost_data.get("weather_summary"):
-                    cost_text += "\n\nWeather impact:\n"
-                    cost_text += f"  {cost_data.get('weather_summary')}\n"
-                    if cost_data.get("weather_multiplier"):
-                        cost_text += f"  Time multiplier: {cost_data.get('weather_multiplier')}x\n"
+                # Weather details are shown in the separate weather panel, not the cost box.
 
                 self.cost_text.config(state="normal")
                 self.cost_text.delete(1.0, tk.END)
                 self.cost_text.insert(tk.END, cost_text)
                 self.cost_text.config(state="disabled")
 
-                # Populate weather details panel
+                # Populate weather details panel with plain-English summary and samples
                 try:
                     self.weather_text.config(state="normal")
                     self.weather_text.delete(1.0, tk.END)
+                    parts = []
+                    ws = cost_data.get('weather_summary')
+                    wm = cost_data.get('weather_multiplier')
+                    if ws:
+                        parts.append(f"Weather summary: {ws}")
+                    if wm:
+                        parts.append(f"Estimated travel time: {wm}x normal")
+                    if ws or wm:
+                        parts.append('')
+
                     if weather_samples:
-                        lines = []
+                        parts.append('Detailed samples along the route:')
+                        def deg_to_compass(deg):
+                            if deg is None:
+                                return 'N/A'
+                            dirs = [
+                                'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
+                                'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'
+                            ]
+                            ix = int((deg + 11.25) / 22.5) % 16
+                            return dirs[ix]
+
                         for s in weather_samples:
                             idx = s.get('path_index')
                             eta = s.get('eta_hours')
+                            latlon = s.get('latlon') or s.get('grid_cell')
+                            if isinstance(latlon, tuple) and len(latlon) == 2 and isinstance(latlon[0], float):
+                                latlon_str = f"{latlon[0]:.3f}, {latlon[1]:.3f}"
+                            else:
+                                latlon_str = f"{latlon[0]},{latlon[1]}" if latlon else 'N/A'
                             wk = s.get('wind_knots')
                             wd = s.get('wind_dir')
                             wv = s.get('wave_m')
-                            pen = s.get('penalty_fraction')
-                            lines.append(f"Sample {idx}: ETA+{eta}h — wind {wk:.1f} kt @ {int(wd) if wd is not None else 'N/A'}° — wave {wv:.2f} m — +{int(round(pen*100))}%")
-                        self.weather_text.insert(tk.END, "\n".join(lines))
+                            pen = s.get('penalty_fraction') or 0.0
+                            if wk is not None:
+                                compass = deg_to_compass(wd)
+                                wind_part = f"{wk:.1f} kt from {compass} ({int(wd)}°)" if wd is not None else f"{wk:.1f} kt"
+                            else:
+                                wind_part = 'Wind: N/A'
+                            wave_part = f"{wv:.2f} m" if wv is not None else 'N/A'
+                            pen_pct = int(round(pen * 100))
+                            pen_part = f"+{pen_pct}% longer"
+                            parts.append(f"• Sample {idx}: in ~{eta} h — at {latlon_str} — Wind: {wind_part}; Waves: {wave_part}; Time change: {pen_part}")
                     else:
-                        self.weather_text.insert(tk.END, "No weather samples available.")
+                        if ws:
+                            parts.append(ws)
+                        else:
+                            parts.append('No weather samples available for this route.')
+
+                    self.weather_text.insert(tk.END, "\n".join(parts))
                 except Exception:
-                    self.weather_text.insert(tk.END, "Weather display failed")
+                    try:
+                        self.weather_text.insert(tk.END, 'Weather display failed')
+                    except Exception:
+                        pass
                 finally:
                     try:
-                        self.weather_text.config(state="disabled")
+                        self.weather_text.config(state='disabled')
                     except Exception:
                         pass
 
@@ -856,17 +950,72 @@ class PathfinderGUI:
 
     def draw_route(self, path, start, goal, start_name, goal_name, weather_samples=None):
         self.ax.clear()
+        # Cache the background RGB map (water/land/ports) so we do not recompute
+        # it on every redraw. Recompute when grid shape or checksum changes.
+        try:
+            grid_sum = int(self.grid.data.sum())
+        except Exception:
+            grid_sum = None
 
-        # Build a true-color background so only matching cells are colored.
-        rgb = np.zeros((self.grid.height, self.grid.width, 3), dtype=np.uint8)
+        need_build = True
+        if hasattr(self, '_bg_rgb') and hasattr(self, '_bg_grid_sum') and hasattr(self, '_bg_shape'):
+            if self._bg_shape == (self.grid.height, self.grid.width) and self._bg_grid_sum == grid_sum:
+                need_build = False
 
-        water_mask = self.grid.data == 0
-        land_mask = (self.grid.data == 1) | (self.grid.data == 2)
-        port_mask = (self.grid.data == 3) | (self.grid.data == 4)
+        if need_build:
+            rgb = np.zeros((self.grid.height, self.grid.width, 3), dtype=np.uint8)
+            water_mask = self.grid.data == 0
+            land_mask = (self.grid.data == 1) | (self.grid.data == 2)
+            port_mask = (self.grid.data == 3) | (self.grid.data == 4)
 
-        rgb[water_mask] = [47, 128, 237]   # blue water
-        rgb[land_mask] = [46, 125, 50]     # green land
-        rgb[port_mask] = [211, 47, 47]     # red ports
+            # Try to remove small artifacts if scipy available
+            try:
+                from scipy.ndimage import label
+                combined = (land_mask | port_mask).astype(int)
+                labeled, ncomp = label(combined)
+                if ncomp:
+                    SMALL_COMP = 30
+                    for comp in range(1, ncomp + 1):
+                        comp_mask = (labeled == comp)
+                        if comp_mask.sum() <= SMALL_COMP:
+                            combined[comp_mask] = 0
+                    land_mask = land_mask & combined.astype(bool)
+                    port_mask = port_mask & combined.astype(bool)
+            except Exception:
+                pass
+
+            # hide area outside outer land rectangle if available
+            try:
+                rows = np.where(land_mask.any(axis=1))[0]
+                cols = np.where(land_mask.any(axis=0))[0]
+                if rows.size and cols.size:
+                    rmin, rmax = int(rows.min()), int(rows.max())
+                    cmin, cmax = int(cols.min()), int(cols.max())
+                    PADDING = 1
+                    rmin = max(0, rmin + PADDING)
+                    rmax = min(self.grid.height - 1, rmax - PADDING)
+                    cmin = max(0, cmin + PADDING)
+                    cmax = min(self.grid.width - 1, cmax - PADDING)
+                    outside_rows = np.ones(self.grid.height, dtype=bool)
+                    outside_rows[rmin:rmax + 1] = False
+                    outside_cols = np.ones(self.grid.width, dtype=bool)
+                    outside_cols[cmin:cmax + 1] = False
+                    outside_mask = np.outer(outside_rows, np.ones(self.grid.width, dtype=bool)) | np.outer(np.ones(self.grid.height, dtype=bool), outside_cols)
+                    water_mask = water_mask | outside_mask
+                    land_mask = land_mask & (~outside_mask)
+                    port_mask = port_mask & (~outside_mask)
+            except Exception:
+                pass
+
+            rgb[water_mask] = [47, 128, 237]   # blue water
+            rgb[land_mask] = [46, 125, 50]     # green land
+            rgb[port_mask] = [211, 47, 47]     # red ports
+
+            self._bg_rgb = rgb
+            self._bg_grid_sum = grid_sum
+            self._bg_shape = (self.grid.height, self.grid.width)
+        else:
+            rgb = self._bg_rgb.copy()
 
         self.ax.imshow(rgb, origin='upper')
 
@@ -909,30 +1058,381 @@ class PathfinderGUI:
         self.ax.axis('off')
         self.canvas.draw()
 
+    def _fetch_weather_and_apply(self, path, start, goal, start_name, goal_name, cost_data):
+        """Background worker: fetch weather and schedule UI update."""
+        try:
+            detailed = getattr(self, 'show_weather_var', None) and self.show_weather_var.get()
+            res = self.weather_estimator.estimate_path_impact(
+                path,
+                ship_profile=self.cost_estimator,
+                detailed=detailed,
+            )
+        except Exception as e:
+            res = (1.0, f"Weather check failed: {e}")
+
+        # schedule application on the main thread
+        try:
+            self.root.after(0, lambda: self._apply_weather_result(res, path, start, goal, start_name, goal_name, cost_data))
+        except Exception:
+            # best-effort: try direct call
+            try:
+                self._apply_weather_result(res, path, start, goal, start_name, goal_name, cost_data)
+            except Exception:
+                pass
+
+    def _apply_weather_result(self, res, path, start, goal, start_name, goal_name, cost_data):
+        """Apply weather result (runs on main thread)."""
+        try:
+            if isinstance(res, tuple) and len(res) == 3:
+                multiplier, weather_summary, weather_samples = res
+            else:
+                multiplier, weather_summary = res
+                weather_samples = None
+
+            # update cost_data if needed
+            if multiplier != 1.0:
+                base_time_days = cost_data.get('time_days', 0)
+                adjusted_time_days = round(base_time_days * multiplier, 1)
+                fuel_cost = adjusted_time_days * self.cost_estimator.fuel_consumption_tpd * self.cost_estimator.fuel_price_per_tonne
+                operating_cost = adjusted_time_days * self.cost_estimator.daily_operating_cost
+                port_fees = cost_data.get('port_fees_usd', 0)
+                subtotal = fuel_cost + operating_cost + port_fees
+                contingency = subtotal * self.cost_estimator.contingency_percent
+                total = subtotal + contingency
+                cost_data.update({
+                    'time_days': adjusted_time_days,
+                    'fuel_cost_usd': round(fuel_cost),
+                    'operating_cost_usd': round(operating_cost),
+                    'port_fees_usd': round(port_fees),
+                    'contingency_usd': round(contingency),
+                    'total_cost_usd': round(total),
+                    'formatted_total': f"${round(total):,}",
+                    'weather_summary': weather_summary,
+                    'weather_multiplier': round(multiplier, 3),
+                })
+            else:
+                cost_data['weather_summary'] = weather_summary
+
+            # refresh cost_text
+            try:
+                if 'error' in cost_data:
+                    cost_text = (
+                        f"Route: {start_name} → {goal_name}\n"
+                        f"Path length: {len(path) - 1} steps\n\n"
+                        f"Cost estimate unavailable: {cost_data['error']}"
+                    )
+                else:
+                    distance_nm = cost_data.get('distance_nm', 0)
+                    time_days = cost_data.get('time_days', 0)
+                    fuel_cost = cost_data.get('fuel_cost_usd', 0)
+                    operating_cost = cost_data.get('operating_cost_usd', 0)
+                    port_fees = cost_data.get('port_fees_usd', 0)
+                    contingency = cost_data.get('contingency_usd', 0)
+                    total = cost_data.get('formatted_total', f"${cost_data.get('total_cost_usd', 0):,}")
+                    divider = '-' * 40
+                    cost_text = (
+                        f"Route: {start_name} → {goal_name}\n"
+                        f"Ship profile: {self.selected_ship_profile}\n"
+                        f"Distance: {distance_nm:,} nautical miles\n"
+                        f"Time at sea: ~{time_days} days\n"
+                        f"{divider}\n"
+                        f"Fuel cost:          ${fuel_cost:,}\n"
+                        f"Operating cost:     ${operating_cost:,}\n"
+                        f"Port fees (start+goal): ${port_fees:,}\n"
+                        f"Contingency:        ${contingency:,}\n"
+                        f"{divider}\n"
+                        f"TOTAL ESTIMATED COST: {total}"
+                    )
+                # Weather details shown in the weather panel (not in cost text).
+
+                self.cost_text.config(state='normal')
+                self.cost_text.delete(1.0, tk.END)
+                self.cost_text.insert(tk.END, cost_text)
+                self.cost_text.config(state='disabled')
+            except Exception:
+                pass
+
+            # update weather details panel (readable summary + samples)
+            try:
+                self.weather_text.config(state='normal')
+                self.weather_text.delete(1.0, tk.END)
+                lines = []
+                ws = cost_data.get('weather_summary')
+                wm = cost_data.get('weather_multiplier')
+                if ws:
+                    lines.append(f"Summary: {ws}")
+                if wm:
+                    lines.append(f"Time multiplier: {wm}x")
+                if ws or wm:
+                    lines.append('-' * 40)
+
+                if weather_samples:
+                    lines.append(f"{'Sample':<8} {'ETA(h)':<7} {'Lat,Lon':<20} {'Wind':<18} {'Wave':<8} {'Penalty':<8}")
+                    for s in weather_samples:
+                        idx = s.get('path_index')
+                        eta = s.get('eta_hours')
+                        latlon = s.get('latlon') or s.get('grid_cell')
+                        if isinstance(latlon, tuple) and len(latlon) == 2 and isinstance(latlon[0], float):
+                            latlon_str = f"{latlon[0]:.3f},{latlon[1]:.3f}"
+                        else:
+                            latlon_str = f"{latlon[0]},{latlon[1]}" if latlon else 'N/A'
+                        wk = s.get('wind_knots')
+                        wd = s.get('wind_dir')
+                        wv = s.get('wave_m')
+                        pen = s.get('penalty_fraction') or 0.0
+                        wind_str = f"{wk:.1f} kt @{int(wd) if wd is not None else 'N/A'}°" if wk is not None else 'N/A'
+                        wave_str = f"{wv:.2f} m" if wv is not None else 'N/A'
+                        pen_str = f"+{int(round(pen*100))}%"
+                        lines.append(f"{str(idx):<8} {str(eta):<7} {latlon_str:<20} {wind_str:<18} {wave_str:<8} {pen_str:<8}")
+                else:
+                    if ws:
+                        lines.append(ws)
+                    else:
+                        lines.append('No weather samples available.')
+
+                self.weather_text.insert(tk.END, "\n".join(lines))
+            except Exception:
+                try:
+                    self.weather_text.insert(tk.END, 'Weather display failed')
+                except Exception:
+                    pass
+            finally:
+                try:
+                    self.weather_text.config(state='disabled')
+                except Exception:
+                    pass
+
+            # redraw route with weather markers if present
+            try:
+                self.draw_route(path, start, goal, start_name, goal_name, weather_samples=weather_samples)
+            except Exception:
+                pass
+
+            mode_suffix = ""
+            try:
+                if getattr(self.pathfinder, 'last_search_mode', None) == 'fallback':
+                    mode_suffix = " (robust fallback)"
+            except Exception:
+                mode_suffix = ""
+            self.status_label.config(text=f"Route ready: {start_name} → {goal_name}{mode_suffix}")
+        except Exception as e:
+            self.status_label.config(text="Weather update failed")
+            print('Weather apply failed:', e)
+
     def on_scroll_zoom(self, event):
         if event.inaxes != self.ax:
             return
 
-        xdata, ydata = event.xdata, event.ydata
-        if xdata is None or ydata is None:
-            return
+        cur_x0, cur_x1, cur_y0, cur_y1 = self._view_target or self._get_current_window_normalized()
+        xspan = max(1e-9, cur_x1 - cur_x0)
+        yspan = max(1e-9, cur_y1 - cur_y0)
 
+        # Faster zoom per wheel notch while keeping smooth animation.
+        zoom_factor = 1.25
+        scale = zoom_factor if event.button == 'down' else (1.0 / zoom_factor)
+
+        # Prevent zooming so far out the map appears tiny, and so far in it is unusable.
+        min_w, min_h, max_w, max_h = self._window_limits()
+
+        new_width = min(max(xspan * scale, min_w), max_w)
+        new_height = min(max(yspan * scale, min_h), max_h)
+
+        # Anchor zoom on cursor position when available for precise control.
+        if event.xdata is not None and event.ydata is not None:
+            anchor_x = float(event.xdata)
+            anchor_y = float(event.ydata)
+        else:
+            anchor_x = (cur_x0 + cur_x1) / 2.0
+            anchor_y = (cur_y0 + cur_y1) / 2.0
+
+        x_ratio = (anchor_x - cur_x0) / xspan
+        y_ratio = (anchor_y - cur_y0) / yspan
+        x_ratio = min(max(x_ratio, 0.0), 1.0)
+        y_ratio = min(max(y_ratio, 0.0), 1.0)
+
+        x0 = anchor_x - (new_width * x_ratio)
+        x1 = x0 + new_width
+        y0 = anchor_y - (new_height * y_ratio)
+        y1 = y0 + new_height
+
+        x0, x1, y0, y1 = self._clamp_window_normalized(x0, x1, y0, y1)
+        self._queue_view_target(x0, x1, y0, y1)
+
+    def _draw_interaction_frame(self, force=False):
+        now = time.perf_counter()
+        if force or (now - self._last_interaction_draw) >= self._interaction_draw_interval:
+            self.canvas.draw_idle()
+            self._last_interaction_draw = now
+
+    def _window_limits(self):
+        x_min_data, x_max_data, y_min_data, y_max_data = self._get_data_bounds()
+        full_w = x_max_data - x_min_data
+        full_h = y_max_data - y_min_data
+        min_w = max(18.0, full_w * 0.006)
+        min_h = max(18.0, full_h * 0.006)
+        max_w = full_w * 1.02
+        max_h = full_h * 1.02
+        return min_w, min_h, max_w, max_h
+
+    def _get_data_bounds(self):
+        return -0.5, self.grid.width - 0.5, -0.5, self.grid.height - 0.5
+
+    def _get_current_window_normalized(self):
         cur_xlim = self.ax.get_xlim()
         cur_ylim = self.ax.get_ylim()
-        xspan = (cur_xlim[1] - cur_xlim[0])
-        yspan = (cur_ylim[1] - cur_ylim[0])
+        x0, x1 = (cur_xlim[0], cur_xlim[1]) if cur_xlim[0] <= cur_xlim[1] else (cur_xlim[1], cur_xlim[0])
+        y0, y1 = (cur_ylim[0], cur_ylim[1]) if cur_ylim[0] <= cur_ylim[1] else (cur_ylim[1], cur_ylim[0])
+        return float(x0), float(x1), float(y0), float(y1)
 
-        scale = 1.15 if event.button == 'down' else (1 / 1.15)
+    def _clamp_window_normalized(self, x0, x1, y0, y1):
+        x_min_data, x_max_data, y_min_data, y_max_data = self._get_data_bounds()
 
-        new_width = xspan * scale
-        new_height = yspan * scale
+        width = max(1e-9, x1 - x0)
+        height = max(1e-9, y1 - y0)
+        min_w, min_h, max_w, max_h = self._window_limits()
+        width = min(max(width, min_w), max_w)
+        height = min(max(height, min_h), max_h)
 
-        relx = (xdata - cur_xlim[0]) / xspan if xspan else 0.5
-        rely = (ydata - cur_ylim[0]) / yspan if yspan else 0.5
+        cx = (x0 + x1) / 2.0
+        cy = (y0 + y1) / 2.0
+        x0 = cx - (width / 2.0)
+        x1 = cx + (width / 2.0)
+        y0 = cy - (height / 2.0)
+        y1 = cy + (height / 2.0)
 
-        self.ax.set_xlim([xdata - new_width * relx, xdata + new_width * (1 - relx)])
-        self.ax.set_ylim([ydata - new_height * rely, ydata + new_height * (1 - rely)])
-        self.canvas.draw_idle()
+        if x0 < x_min_data:
+            shift = x_min_data - x0
+            x0 += shift
+            x1 += shift
+        if x1 > x_max_data:
+            shift = x1 - x_max_data
+            x0 -= shift
+            x1 -= shift
+
+        if y0 < y_min_data:
+            shift = y_min_data - y0
+            y0 += shift
+            y1 += shift
+        if y1 > y_max_data:
+            shift = y1 - y_max_data
+            y0 -= shift
+            y1 -= shift
+
+        return x0, x1, y0, y1
+
+    def _set_window_from_normalized(self, x0, x1, y0, y1):
+        cur_xlim = self.ax.get_xlim()
+        cur_ylim = self.ax.get_ylim()
+        xinverted = cur_xlim[0] > cur_xlim[1]
+        yinverted = cur_ylim[0] > cur_ylim[1]
+        self.ax.set_xlim([x1, x0] if xinverted else [x0, x1])
+        self.ax.set_ylim([y1, y0] if yinverted else [y0, y1])
+
+    def _queue_view_target(self, x0, x1, y0, y1):
+        self._view_target = (float(x0), float(x1), float(y0), float(y1))
+        self._last_view_input = time.perf_counter()
+        if not self._view_animating:
+            self._view_animating = True
+            self._view_last_tick = self._last_view_input
+            self._animate_view_step()
+
+    def _animate_view_step(self):
+        if not self._view_animating or self._view_target is None:
+            self._view_animating = False
+            self._view_anim_after_id = None
+            return
+
+        now = time.perf_counter()
+        dt = max(1e-4, now - self._view_last_tick)
+        self._view_last_tick = now
+
+        alpha = 1.0 - math.exp(-dt / self._view_tau)
+        alpha = min(max(alpha, 0.08), 0.65)
+
+        cx0, cx1, cy0, cy1 = self._get_current_window_normalized()
+        tx0, tx1, ty0, ty1 = self._view_target
+
+        nx0 = cx0 + (tx0 - cx0) * alpha
+        nx1 = cx1 + (tx1 - cx1) * alpha
+        ny0 = cy0 + (ty0 - cy0) * alpha
+        ny1 = cy1 + (ty1 - cy1) * alpha
+        nx0, nx1, ny0, ny1 = self._clamp_window_normalized(nx0, nx1, ny0, ny1)
+
+        self._set_window_from_normalized(nx0, nx1, ny0, ny1)
+        self._draw_interaction_frame(force=True)
+
+        err = max(abs(tx0 - nx0), abs(tx1 - nx1), abs(ty0 - ny0), abs(ty1 - ny1))
+        settle = err < 0.03
+        idle_long_enough = (now - self._last_view_input) > 0.05
+
+        if settle and idle_long_enough:
+            tx0, tx1, ty0, ty1 = self._clamp_window_normalized(tx0, tx1, ty0, ty1)
+            self._set_window_from_normalized(tx0, tx1, ty0, ty1)
+            self._draw_interaction_frame(force=True)
+            self._view_target = None
+            self._view_animating = False
+            self._view_anim_after_id = None
+            return
+
+        delay_ms = max(1, int(round(1000.0 / self._view_fps)))
+        try:
+            self._view_anim_after_id = self.root.after(delay_ms, self._animate_view_step)
+        except Exception:
+            self._view_animating = False
+            self._view_anim_after_id = None
+
+    def on_pan_press(self, event):
+        # Left mouse button starts panning when pointer is inside axes.
+        if event.inaxes != self.ax or event.button != 1:
+            return
+        if self.ax.get_navigate_mode() in ("PAN", "ZOOM"):
+            return
+        if event.x is None or event.y is None:
+            return
+
+        self._pan_active = True
+        # Track pixel-space mouse position for stable drag math.
+        self._pan_last = (event.x, event.y)
+
+    def on_pan_drag(self, event):
+        if not self._pan_active:
+            return
+        if event.x is None or event.y is None or self._pan_last is None:
+            return
+
+        last_x, last_y = self._pan_last
+        dx_px = event.x - last_x
+        dy_px = event.y - last_y
+        self._pan_last = (event.x, event.y)
+
+        base_x0, base_x1, base_y0, base_y1 = self._view_target or self._get_current_window_normalized()
+
+        # Convert pixel drag delta to data-space shift using signed spans.
+        bbox = self.ax.bbox
+        if bbox is None or bbox.width == 0 or bbox.height == 0:
+            return
+        cur_xlim = self.ax.get_xlim()
+        cur_ylim = self.ax.get_ylim()
+        xsign = -1.0 if cur_xlim[0] > cur_xlim[1] else 1.0
+        ysign = -1.0 if cur_ylim[0] > cur_ylim[1] else 1.0
+        xspan_signed = (base_x1 - base_x0) * xsign
+        yspan_signed = (base_y1 - base_y0) * ysign
+        x_shift = -dx_px * (xspan_signed / bbox.width)
+        y_shift = -dy_px * (yspan_signed / bbox.height)
+
+        # Shift window so map content follows mouse drag direction.
+        x0 = base_x0 + x_shift
+        x1 = base_x1 + x_shift
+        y0 = base_y0 + y_shift
+        y1 = base_y1 + y_shift
+        x0, x1, y0, y1 = self._clamp_window_normalized(x0, x1, y0, y1)
+        self._queue_view_target(x0, x1, y0, y1)
+
+    def on_pan_release(self, event):
+        if event.button == 1:
+            self._pan_active = False
+            self._pan_last = None
+            self._draw_interaction_frame(force=True)
 
 
 # run the program
