@@ -11,7 +11,7 @@ sys.path.insert(0, base)
 print('DEBUG: file check astar ->', os.path.exists(os.path.join(base, 'pathfinder', 'algorithms', 'astar.py')))
 
 try:
-    import pathfinder.app as app
+    import pathfinder.FullSystem as app
     print('IMPORT_OK')
 except Exception as e:
     import traceback

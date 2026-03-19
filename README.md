@@ -38,7 +38,7 @@ Primary code is in `src/pathfinder`.
 ```text
 	src/
 	pathfinder/
-		app.py                           # Tkinter GUI application (renamed from FullSystem.py)
+		FullSystem.py                    # Tkinter GUI application
 		pathfinder_interface.py          # Console application
 		algorithms/
 			astar.py                       # Grid model + A* implementation (snake_case)
@@ -116,7 +116,7 @@ Run commands from the repository root.
 ### 1. GUI Application (Main)
 
 ```powershell
-python src/pathfinder/app.py
+python src/pathfinder/FullSystem.py
 ```
 
 What you get:
@@ -150,14 +150,14 @@ Use these when rebuilding or validating the map grid data pipeline.
 The following values are hardcoded and should be reviewed for portability:
 
 - `GRID_FILE` in:
-	- `src/pathfinder/app.py`
+	- `src/pathfinder/FullSystem.py`
 	- `src/pathfinder/pathfinder_interface.py`
 - Script input paths in:
 	- `src/pathfinder/scripts/MapToGrid.py`
 	- `src/pathfinder/scripts/mapVisualiser.py`
 	- `src/pathfinder/data/temp.py`
 - Port lists in:
-	- `src/pathfinder/app.py`
+	- `src/pathfinder/FullSystem.py`
 	- `src/pathfinder/pathfinder_interface.py`
 
 Most of these currently point to absolute local Windows paths. If you move machines or directories, update these to valid local paths.
@@ -165,7 +165,7 @@ Most of these currently point to absolute local Windows paths. If you move machi
 ## Typical Workflow
 
 1. Prepare or load a valid grid (`FullGridOfEurope.npy`).
-2. Launch GUI (`app.py`) or CLI (`pathfinder_interface.py`).
+2. Launch GUI (`FullSystem.py`) or CLI (`pathfinder_interface.py`).
 3. Select start and goal ports.
 4. Run route computation.
 5. Review route and estimated shipping cost.
