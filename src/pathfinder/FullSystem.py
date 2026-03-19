@@ -332,15 +332,23 @@ class PathfinderGUI:
 
         self._pan_active = False
         self._pan_last = None
+        self._pan_last_data = None
+        self._pan_last_ts = None
+        self._pan_velocity_data = (0.0, 0.0)
+        self._pan_inertia_active = False
+        self._pan_inertia_after_id = None
+        self._pan_inertia_last_tick = None
         self._view_target = None
         self._view_animating = False
         self._view_anim_after_id = None
         self._view_last_tick = time.perf_counter()
         self._last_view_input = self._view_last_tick
-        self._view_fps = 120
-        self._view_tau = 0.045
+        self._view_fps = 144
+        self._view_tau_zoom = 0.055
+        self._view_tau_pan = 0.028
+        self._view_interaction_mode = "idle"
         self._last_interaction_draw = 0.0
-        self._interaction_draw_interval = 1.0 / 120.0
+        self._interaction_draw_interval = 1.0 / 144.0
 
         # Start with blank map (no base map shown on startup)
         self.draw_blank_map()
@@ -1223,13 +1231,20 @@ class PathfinderGUI:
         if event.inaxes != self.ax:
             return
 
+        self._stop_pan_inertia()
+        self._view_interaction_mode = "zoom"
+
         cur_x0, cur_x1, cur_y0, cur_y1 = self._view_target or self._get_current_window_normalized()
         xspan = max(1e-9, cur_x1 - cur_x0)
         yspan = max(1e-9, cur_y1 - cur_y0)
 
-        # Faster zoom per wheel notch while keeping smooth animation.
-        zoom_factor = 1.25
-        scale = zoom_factor if event.button == 'down' else (1.0 / zoom_factor)
+        # Support high-resolution wheel/trackpad events using event.step when available.
+        raw_step = getattr(event, "step", None)
+        if raw_step is None:
+            raw_step = -1.0 if getattr(event, "button", None) == "down" else 1.0
+        step = max(-6.0, min(6.0, float(raw_step)))
+        # Exponential scaling provides smoother zoom progression than fixed jumps.
+        scale = 1.12 ** (-step)
 
         # Prevent zooming so far out the map appears tiny, and so far in it is unusable.
         min_w, min_h, max_w, max_h = self._window_limits()
@@ -1346,8 +1361,9 @@ class PathfinderGUI:
         dt = max(1e-4, now - self._view_last_tick)
         self._view_last_tick = now
 
-        alpha = 1.0 - math.exp(-dt / self._view_tau)
-        alpha = min(max(alpha, 0.08), 0.65)
+        tau = self._view_tau_pan if self._view_interaction_mode == "pan" else self._view_tau_zoom
+        alpha = 1.0 - math.exp(-dt / tau)
+        alpha = min(max(alpha, 0.12), 0.72)
 
         cx0, cx1, cy0, cy1 = self._get_current_window_normalized()
         tx0, tx1, ty0, ty1 = self._view_target
@@ -1359,7 +1375,7 @@ class PathfinderGUI:
         nx0, nx1, ny0, ny1 = self._clamp_window_normalized(nx0, nx1, ny0, ny1)
 
         self._set_window_from_normalized(nx0, nx1, ny0, ny1)
-        self._draw_interaction_frame(force=True)
+        self._draw_interaction_frame(force=False)
 
         err = max(abs(tx0 - nx0), abs(tx1 - nx1), abs(ty0 - ny0), abs(ty1 - ny1))
         settle = err < 0.03
@@ -1372,6 +1388,7 @@ class PathfinderGUI:
             self._view_target = None
             self._view_animating = False
             self._view_anim_after_id = None
+            self._view_interaction_mode = "idle"
             return
 
         delay_ms = max(1, int(round(1000.0 / self._view_fps)))
@@ -1390,9 +1407,17 @@ class PathfinderGUI:
         if event.x is None or event.y is None:
             return
 
+        self._stop_pan_inertia()
+        self._view_interaction_mode = "pan"
         self._pan_active = True
         # Track pixel-space mouse position for stable drag math.
         self._pan_last = (event.x, event.y)
+        self._pan_last_data = (
+            float(event.xdata) if event.xdata is not None else None,
+            float(event.ydata) if event.ydata is not None else None,
+        )
+        self._pan_last_ts = time.perf_counter()
+        self._pan_velocity_data = (0.0, 0.0)
 
     def on_pan_drag(self, event):
         if not self._pan_active:
@@ -1405,20 +1430,34 @@ class PathfinderGUI:
         dy_px = event.y - last_y
         self._pan_last = (event.x, event.y)
 
+        now = time.perf_counter()
+        dt = max(1e-4, now - (self._pan_last_ts or now))
+        self._pan_last_ts = now
+
         base_x0, base_x1, base_y0, base_y1 = self._view_target or self._get_current_window_normalized()
 
-        # Convert pixel drag delta to data-space shift using signed spans.
-        bbox = self.ax.bbox
-        if bbox is None or bbox.width == 0 or bbox.height == 0:
-            return
-        cur_xlim = self.ax.get_xlim()
-        cur_ylim = self.ax.get_ylim()
-        xsign = -1.0 if cur_xlim[0] > cur_xlim[1] else 1.0
-        ysign = -1.0 if cur_ylim[0] > cur_ylim[1] else 1.0
-        xspan_signed = (base_x1 - base_x0) * xsign
-        yspan_signed = (base_y1 - base_y0) * ysign
-        x_shift = -dx_px * (xspan_signed / bbox.width)
-        y_shift = -dy_px * (yspan_signed / bbox.height)
+        # Prefer data-space deltas for stable, low-jitter panning at all zoom levels.
+        x_shift = None
+        y_shift = None
+        if event.xdata is not None and event.ydata is not None:
+            last_dx, last_dy = self._pan_last_data or (None, None)
+            if last_dx is not None and last_dy is not None:
+                x_shift = -(float(event.xdata) - float(last_dx))
+                y_shift = -(float(event.ydata) - float(last_dy))
+            self._pan_last_data = (float(event.xdata), float(event.ydata))
+
+        if x_shift is None or y_shift is None:
+            bbox = self.ax.bbox
+            if bbox is None or bbox.width == 0 or bbox.height == 0:
+                return
+            cur_xlim = self.ax.get_xlim()
+            cur_ylim = self.ax.get_ylim()
+            xsign = -1.0 if cur_xlim[0] > cur_xlim[1] else 1.0
+            ysign = -1.0 if cur_ylim[0] > cur_ylim[1] else 1.0
+            xspan_signed = (base_x1 - base_x0) * xsign
+            yspan_signed = (base_y1 - base_y0) * ysign
+            x_shift = -dx_px * (xspan_signed / bbox.width)
+            y_shift = -dy_px * (yspan_signed / bbox.height)
 
         # Shift window so map content follows mouse drag direction.
         x0 = base_x0 + x_shift
@@ -1426,13 +1465,81 @@ class PathfinderGUI:
         y0 = base_y0 + y_shift
         y1 = base_y1 + y_shift
         x0, x1, y0, y1 = self._clamp_window_normalized(x0, x1, y0, y1)
+
+        inst_vx = x_shift / dt
+        inst_vy = y_shift / dt
+        old_vx, old_vy = self._pan_velocity_data
+        self._pan_velocity_data = (
+            (old_vx * 0.65) + (inst_vx * 0.35),
+            (old_vy * 0.65) + (inst_vy * 0.35),
+        )
         self._queue_view_target(x0, x1, y0, y1)
 
     def on_pan_release(self, event):
         if event.button == 1:
             self._pan_active = False
             self._pan_last = None
+            self._pan_last_data = None
+            self._start_pan_inertia()
             self._draw_interaction_frame(force=True)
+
+    def _stop_pan_inertia(self):
+        self._pan_inertia_active = False
+        if self._pan_inertia_after_id is not None:
+            try:
+                self.root.after_cancel(self._pan_inertia_after_id)
+            except Exception:
+                pass
+        self._pan_inertia_after_id = None
+
+    def _start_pan_inertia(self):
+        vx, vy = self._pan_velocity_data
+        speed = math.hypot(vx, vy)
+        if speed < 6.0:
+            self._view_interaction_mode = "idle"
+            return
+        self._stop_pan_inertia()
+        self._pan_inertia_active = True
+        self._pan_inertia_last_tick = time.perf_counter()
+        self._animate_pan_inertia()
+
+    def _animate_pan_inertia(self):
+        if not self._pan_inertia_active:
+            self._pan_inertia_after_id = None
+            return
+
+        now = time.perf_counter()
+        dt = max(1e-4, now - (self._pan_inertia_last_tick or now))
+        self._pan_inertia_last_tick = now
+
+        vx, vy = self._pan_velocity_data
+        decay = math.exp(-dt / 0.22)
+        vx *= decay
+        vy *= decay
+        self._pan_velocity_data = (vx, vy)
+
+        if math.hypot(vx, vy) < 1.0:
+            self._stop_pan_inertia()
+            self._view_interaction_mode = "idle"
+            return
+
+        base_x0, base_x1, base_y0, base_y1 = self._view_target or self._get_current_window_normalized()
+        x_shift = vx * dt
+        y_shift = vy * dt
+        x0 = base_x0 + x_shift
+        x1 = base_x1 + x_shift
+        y0 = base_y0 + y_shift
+        y1 = base_y1 + y_shift
+        x0, x1, y0, y1 = self._clamp_window_normalized(x0, x1, y0, y1)
+        self._view_interaction_mode = "pan"
+        self._queue_view_target(x0, x1, y0, y1)
+
+        delay_ms = max(1, int(round(1000.0 / self._view_fps)))
+        try:
+            self._pan_inertia_after_id = self.root.after(delay_ms, self._animate_pan_inertia)
+        except Exception:
+            self._stop_pan_inertia()
+            self._view_interaction_mode = "idle"
 
 
 # run the program
