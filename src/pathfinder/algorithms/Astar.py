@@ -1,3 +1,11 @@
+"""Compatibility shim: lowercase module name expected by imports.
+
+Some parts of the codebase import `pathfinder.algorithms.astar` (lowercase),
+but the implementation file is named `Astar.py`. On case-insensitive filesystems
+this usually works, but some import mechanisms (and tooling) expect the
+lowercase module to exist. Re-export the main symbols from `Astar.py` here.
+"""
+from .Astar import *  # noqa: F401,F403
 """A* pathfinding (minimal, safe import implementation)."""
 
 import numpy as np

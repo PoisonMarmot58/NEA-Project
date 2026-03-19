@@ -15,6 +15,23 @@ problems when tools call `importlib.util.find_spec` for submodules.
 import importlib
 import typing
 
+# Ensure import system caches are refreshed so submodule files (e.g. astar.py)
+# created at runtime are discoverable by importlib.find_spec on some setups.
+importlib.invalidate_caches()
+from pathlib import Path
+
+# Force a concrete list for __path__ so PathFinder looks in the right folder
+# even if package import machinery wrapped it in a namespace path object.
+__path__ = [str(Path(__file__).resolve().parent)]
+
+# Eagerly register the lowercase `astar` module if present so consumers
+# that expect `pathfinder.algorithms.astar` can import it reliably.
+try:
+	from . import astar  # type: ignore
+except Exception:
+	# If import fails, keep package lazy-loading behaviour unchanged.
+	pass
+
 
 def __getattr__(name: str):
 	# Lazy-load the snake_case modules on attribute access.

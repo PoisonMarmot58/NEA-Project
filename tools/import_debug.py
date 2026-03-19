@@ -16,7 +16,14 @@ except Exception as e:
 try:
     import pathfinder.algorithms.astar as astar
     print('Imported astar from', getattr(astar, '__file__', None))
-except Exception as e:
+except ModuleNotFoundError:
+    try:
+        import pathfinder.algorithms.Astar as astar
+        print('Imported Astar (fallback) from', getattr(astar, '__file__', None))
+    except Exception:
+        import traceback
+        traceback.print_exc()
+except Exception:
     import traceback
     traceback.print_exc()
 
