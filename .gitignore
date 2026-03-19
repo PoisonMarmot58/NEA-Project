@@ -1,2 +1,25 @@
-__pycache__
+# Virtual env
+.venv/
+
+# backups and large generated datasets
+backups/
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Editor
+.vscode/
+
+# Test and build artifacts
+*.zip
+dist/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temp staging used by packaging script
+%TEMP%/NEA-Project-1-share
+
 .env

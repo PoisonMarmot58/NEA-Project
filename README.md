@@ -36,13 +36,13 @@ The project combines:
 Primary code is in `src/pathfinder`.
 
 ```text
-src/
+	src/
 	pathfinder/
-		FullSystem.py                    # Tkinter GUI application
+		app.py                           # Tkinter GUI application (renamed from FullSystem.py)
 		pathfinder_interface.py          # Console application
 		algorithms/
-			Astar.py                       # Grid model + A* implementation
-			CostCalculator.py              # Route cost estimator
+			astar.py                       # Grid model + A* implementation (snake_case)
+			cost_calculator.py              # Route cost estimator (snake_case)
 			PriorityQueue.py               # Simple queue helper
 			Raycaster.py                   # Raycast utility (experimental)
 		scripts/
@@ -69,14 +69,14 @@ In pathfinding, water cells are traversable and the goal can be a port cell.
 
 ## How Pathfinding Works
 
-`AStarPathfinder` in `src/pathfinder/algorithms/Astar.py`:
+`AStarPathfinder` in `src/pathfinder/algorithms/astar.py`:
 
 - Uses Euclidean distance heuristic.
-- Uses 4-directional movement (up/down/left/right).
-- Rejects land and non-walkable cells.
+- Uses 8-connected movement (allows diagonal steps for more natural sea routes).
+- Rejects land and non-walkable cells; ports are allowed as goals.
 - Reconstructs the route from `cameFrom` when goal is reached.
 
-Current step cost is uniform (`+1` per move), so the route minimizes cell-count distance under movement constraints.
+Current step cost distinguishes straight vs diagonal moves (diagonals ~√2), so the route minimizes realistic travel distance on the grid.
 
 ## Requirements
 
@@ -116,7 +116,7 @@ Run commands from the repository root.
 ### 1. GUI Application (Main)
 
 ```powershell
-python src/pathfinder/FullSystem.py
+python src/pathfinder/app.py
 ```
 
 What you get:
@@ -150,14 +150,14 @@ Use these when rebuilding or validating the map grid data pipeline.
 The following values are hardcoded and should be reviewed for portability:
 
 - `GRID_FILE` in:
-	- `src/pathfinder/FullSystem.py`
+	- `src/pathfinder/app.py`
 	- `src/pathfinder/pathfinder_interface.py`
 - Script input paths in:
 	- `src/pathfinder/scripts/MapToGrid.py`
 	- `src/pathfinder/scripts/mapVisualiser.py`
 	- `src/pathfinder/data/temp.py`
 - Port lists in:
-	- `src/pathfinder/FullSystem.py`
+	- `src/pathfinder/app.py`
 	- `src/pathfinder/pathfinder_interface.py`
 
 Most of these currently point to absolute local Windows paths. If you move machines or directories, update these to valid local paths.
@@ -165,7 +165,7 @@ Most of these currently point to absolute local Windows paths. If you move machi
 ## Typical Workflow
 
 1. Prepare or load a valid grid (`FullGridOfEurope.npy`).
-2. Launch GUI (`FullSystem.py`) or CLI (`pathfinder_interface.py`).
+2. Launch GUI (`app.py`) or CLI (`pathfinder_interface.py`).
 3. Select start and goal ports.
 4. Run route computation.
 5. Review route and estimated shipping cost.

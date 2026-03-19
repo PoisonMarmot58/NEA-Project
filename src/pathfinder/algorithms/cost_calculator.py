@@ -1,16 +1,4 @@
-"""CostCalculator module.
-
-This module supports overriding the bunker fuel price at runtime so estimates
-can use up-to-date prices. Resolution order (highest precedence first):
-
-- Environment variable `BUNKER_PRICE_PER_TON` (USD per tonne)
-- JSON file at `src/pathfinder/data/prices.json` with key
-    `bunker_price_per_tonne`
-- Optional fetch from URL in `BUNKER_PRICE_URL` (expects JSON with a
-    recognizable price field)
-
-If none are present, the default hardcoded value is used.
-"""
+"""Cost calculator (snake_case copy of CostCalculator.py)."""
 
 import math
 import os
