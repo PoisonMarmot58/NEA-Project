@@ -21,22 +21,57 @@ from pathlib import Path
 import math
 import os
 import numpy as np
+import json
 
 try:
     import requests
 except Exception:
     requests = None
 
-# Control points mapping lat/lon -> pixel row/col (copied from MapToGrid)
-_CONTROL_POINTS = [
-    # [lat, lon, pixel_row(y), pixel_col(x)]
-    [51.923,  4.479,  2001, 1950],    # Rotterdam
-    [53.547,  9.987,  2214, 1895],    # Hamburg
-    [36.140, -5.435,  1298, 3025],    # Gibraltar
-    [37.942, 23.637,  3044, 2918],    # Piraeus
-    [38.710, -9.126,  1145, 2806],    # Lisbon
-    [51.962,  1.351,  1842, 1892],    # Felixstowe
-]
+# Control points mapping lat/lon -> pixel row/col.
+# Prefer the user-calibrated points stored under src/pathfinder/data/ports_user_calibrated.json.
+# Fall back to a small embedded set if loading fails.
+_CONTROL_POINTS = []
+try:
+    # Primary source: user-saved control points (explicitly requested)
+    _DATA_PATH = Path(__file__).resolve().parents[1] / 'data' / 'user_control_points_saved.json'
+    if _DATA_PATH.exists():
+        with _DATA_PATH.open('r', encoding='utf-8') as _f:
+            _ports = json.load(_f)
+        for _p in _ports:
+            _lat = _p.get('latitude')
+            _lon = _p.get('longitude')
+            _r = _p.get('grid_row')
+            _c = _p.get('grid_col')
+            if None not in (_lat, _lon, _r, _c):
+                _CONTROL_POINTS.append([float(_lat), float(_lon), int(_r), int(_c)])
+    else:
+        # Fallback: try the previously used calibrated ports file
+        _DATA_PATH = Path(__file__).resolve().parents[1] / 'data' / 'ports_user_calibrated.json'
+        if _DATA_PATH.exists():
+            with _DATA_PATH.open('r', encoding='utf-8') as _f:
+                _ports = json.load(_f)
+            for _p in _ports:
+                _lat = _p.get('latitude')
+                _lon = _p.get('longitude')
+                _r = _p.get('grid_row')
+                _c = _p.get('grid_col')
+                if None not in (_lat, _lon, _r, _c):
+                    _CONTROL_POINTS.append([float(_lat), float(_lon), int(_r), int(_c)])
+except Exception:
+    _CONTROL_POINTS = []
+
+# Fallback (used if JSON loading failed or file was missing)
+if not _CONTROL_POINTS:
+    _CONTROL_POINTS = [
+        # [lat, lon, pixel_row(y), pixel_col(x)] — using user-calibrated grid coords
+        [51.923,  4.479,  1917, 1964],    # Rotterdam
+        [53.547,  9.987,  1791, 2187],    # Hamburg
+        [36.140, -5.435,  3016, 1298],    # Algeciras / Gibraltar area
+        [37.942, 23.637,  2924, 3059],    # Piraeus
+        [38.720, -9.140,  2809, 1110],    # Lisbon
+        [51.963,  1.351,  1909, 1832],    # Felixstowe
+    ]
 
 
 class WeatherImpactEstimator:
