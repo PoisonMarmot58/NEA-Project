@@ -38,19 +38,14 @@ Primary code is in `src/pathfinder`.
 ```text
 	src/
 	pathfinder/
-		app.py                           # Tkinter GUI application (renamed from FullSystem.py)
-		pathfinder_interface.py          # Console application
+		FullSystem.py                    # Tkinter GUI application
 		algorithms/
-			astar.py                       # Grid model + A* implementation (snake_case)
-			cost_calculator.py              # Route cost estimator (snake_case)
-			PriorityQueue.py               # Simple queue helper
-			Raycaster.py                   # Raycast utility (experimental)
-		scripts/
-			MapToGrid.py                   # Image -> grid pipeline
-			PortAddition.py                # Port coordinate interpolation helper
-			mapVisualiser.py               # Grid inspection visualizer
+			Astar.py                       # Grid model + A* implementation
+			CostCalculator.py              # Route cost estimator
+			WeatherEstimator.py            # Weather impact estimator
 		data/
-			ports.json                     # Port metadata sample
+			FullGridOfEurope.npy           # Main traversability grid
+			ports_user_calibrated.json     # Port metadata
 ```
 
 There is also a legacy/backup area under `Pathfinder Algorithm/Backups` containing older snapshots.
@@ -69,7 +64,7 @@ In pathfinding, water cells are traversable and the goal can be a port cell.
 
 ## How Pathfinding Works
 
-`AStarPathfinder` in `src/pathfinder/algorithms/astar.py`:
+`AStarPathfinder` in `src/pathfinder/algorithms/Astar.py`:
 
 - Uses Euclidean distance heuristic.
 - Uses 8-connected movement (allows diagonal steps for more natural sea routes).
@@ -91,7 +86,7 @@ Core packages used by runtime and scripts:
 - `pillow`
 
 The repository currently includes a pinned dependency file at:
-- `Interface/requirements.txt`
+- `requirements.txt`
 
 ## Setup
 
@@ -100,12 +95,12 @@ From the repository root:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r Interface/requirements.txt
+pip install -r requirements.txt
 pip install matplotlib scipy pillow
 ```
 
 Notes:
-- `matplotlib`, `scipy`, and `pillow` are needed by the pathfinder scripts but are not currently pinned in `Interface/requirements.txt`.
+- `matplotlib`, `scipy`, and `pillow` are needed by the GUI and algorithm helpers.
 - If PowerShell blocks activation, run:
 	`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
 
@@ -116,7 +111,7 @@ Run commands from the repository root.
 ### 1. GUI Application (Main)
 
 ```powershell
-python src/pathfinder/app.py
+python src/pathfinder/FullSystem.py
 ```
 
 What you get:
@@ -124,48 +119,30 @@ What you get:
 - Route plotting on the map.
 - Cost estimate panel.
 
-### 2. Console Interface
+### 2. Data/Debug Utilities (Optional)
 
 ```powershell
-python src/pathfinder/pathfinder_interface.py
+python scripts/check_grid.py
+python tools/import_test.py
 ```
 
-What you get:
-- Menu-driven terminal flow.
-- Port listing and route selection.
-- Route summary (length and sample steps).
-
-### 3. Data Preparation Utilities (Optional)
-
-```powershell
-python src/pathfinder/scripts/MapToGrid.py
-python src/pathfinder/scripts/PortAddition.py
-python src/pathfinder/scripts/mapVisualiser.py
-```
-
-Use these when rebuilding or validating the map grid data pipeline.
+Use these to validate grid integrity and module imports.
 
 ## Configuration You Will Likely Edit
 
 The following values are hardcoded and should be reviewed for portability:
 
 - `GRID_FILE` in:
-	- `src/pathfinder/app.py`
-	- `src/pathfinder/pathfinder_interface.py`
-- Script input paths in:
-	- `src/pathfinder/scripts/MapToGrid.py`
-	- `src/pathfinder/scripts/mapVisualiser.py`
-	- `src/pathfinder/data/temp.py`
+	- `src/pathfinder/FullSystem.py`
 - Port lists in:
-	- `src/pathfinder/app.py`
-	- `src/pathfinder/pathfinder_interface.py`
+	- `src/pathfinder/FullSystem.py`
 
 Most of these currently point to absolute local Windows paths. If you move machines or directories, update these to valid local paths.
 
 ## Typical Workflow
 
 1. Prepare or load a valid grid (`FullGridOfEurope.npy`).
-2. Launch GUI (`app.py`) or CLI (`pathfinder_interface.py`).
+2. Launch GUI (`FullSystem.py`).
 3. Select start and goal ports.
 4. Run route computation.
 5. Review route and estimated shipping cost.
@@ -176,7 +153,7 @@ Most of these currently point to absolute local Windows paths. If you move machi
 - Port datasets are partially duplicated across modules.
 - Movement is currently 4-directional only (no diagonals).
 - Cost model is a simplified estimator and not tied to dynamic weather, draft, canal fees, or real vessel schedules.
-- Dependency management is split (only `Interface/requirements.txt` exists today).
+- Runtime dependencies may need occasional updates as weather/API libraries evolve.
 
 ## Suggested Next Improvements
 

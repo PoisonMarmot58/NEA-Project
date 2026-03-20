@@ -1,4 +1,19 @@
-"""Weather impact estimator (snake_case copy of WeatherEstimator.py)."""
+"""Weather impact estimator for sea routes.
+
+This module maps grid cells to lat/lon using a small set of control points
+(matching `MapToGrid.py`), samples points along a computed path, queries
+Open-Meteo for current wind speed, and returns a time multiplier and a
+small human-readable summary of the effect.
+
+Behaviour:
+- Sample up to 5 points along the path (start, 1/4, 1/2, 3/4, end).
+- Query Open-Meteo `current_weather` for each sample point (if `requests`
+  is available). Wind speed (m/s) is converted to knots.
+- If average wind > 10 knots, each knot above 10 adds 2% extra time.
+  (multiplier = 1 + (avg_knots - 10) * 0.02)
+
+If network or requests is unavailable, returns multiplier=1 and a note.
+"""
 
 from typing import List, Tuple
 from scipy.interpolate import LinearNDInterpolator
@@ -383,8 +398,7 @@ class WeatherImpactEstimator:
                             break
                         route_failed_hourly.add(k2)
                         if network_checks >= max_network_checks:
-                            if network_checks >= max_network_checks:
-                                break
+                            break
 
                 # if grid-neighbour search failed, try small degree offset fallbacks
                 if not found and not data:
