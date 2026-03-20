@@ -74,6 +74,12 @@ class AStarPathfinder:
         # Precompute neighbor offsets and movement costs to avoid allocations.
         self._directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
         self._diag_cost = math.sqrt(2.0)
+        # Route cache to avoid recomputing common port pairs.
+        self._route_cache = {}
+        self._route_cache_limit = 64
+        # Long-route threshold (in grid-cell Euclidean distance) for trying
+        # bidirectional search early.
+        self.long_route_threshold = 1800.0
 
     def heuristic(self, a:Tuple[int,int], b: Tuple[int,int]) -> float:
         # use math.hypot implemented in C for speed
@@ -131,6 +137,7 @@ class AStarPathfinder:
         heuristic_weight: float,
         max_expansions: Optional[int],
         coastal_penalty_scale: float,
+        corridor_bounds: Optional[Tuple[int, int, int, int]] = None,
     ) -> Optional[List[Tuple[int, int]]]:
         openSet: List[Tuple[float, Tuple[int,int]]] = []
         heapq.heappush(openSet, (0.0, start))
@@ -159,6 +166,9 @@ class AStarPathfinder:
             cost_func = self._coastal_penalty
             hw = heuristic_weight
             for neighbour, move_cost in neigh_func(current):
+                if corridor_bounds is not None and not self._in_bounds(neighbour, corridor_bounds):
+                    if neighbour != goal and neighbour != start:
+                        continue
                 isNeighbourGoal = (neighbour == goal)
                 if not walkable(neighbour[0], neighbour[1], isNeighbourGoal):
                     continue
@@ -180,6 +190,169 @@ class AStarPathfinder:
                 fscore = tentativeScore + (hw * self.heuristic(neighbour, goal))
                 heapq.heappush(openSet, (fscore, neighbour))
 
+        return None
+
+    def _in_bounds(self, cell: Tuple[int, int], bounds: Tuple[int, int, int, int]) -> bool:
+        r, c = cell
+        r0, r1, c0, c1 = bounds
+        return r0 <= r <= r1 and c0 <= c <= c1
+
+    def _corridor_bounds(self, start: Tuple[int, int], goal: Tuple[int, int], pad: int) -> Tuple[int, int, int, int]:
+        sr, sc = start
+        gr, gc = goal
+        r0 = max(0, min(sr, gr) - pad)
+        r1 = min(self.grid.height - 1, max(sr, gr) + pad)
+        c0 = max(0, min(sc, gc) - pad)
+        c1 = min(self.grid.width - 1, max(sc, gc) + pad)
+        return (r0, r1, c0, c1)
+
+    def _cache_get(self, start: Tuple[int, int], goal: Tuple[int, int]) -> Optional[List[Tuple[int, int]]]:
+        key = (start, goal)
+        path = self._route_cache.get(key)
+        if path is None:
+            return None
+        # Return a copy to avoid accidental caller mutation of cached path.
+        return list(path)
+
+    def _cache_put(self, start: Tuple[int, int], goal: Tuple[int, int], path: List[Tuple[int, int]]) -> None:
+        if not path:
+            return
+        key = (start, goal)
+        self._route_cache[key] = list(path)
+        rev_key = (goal, start)
+        self._route_cache[rev_key] = list(reversed(path))
+        while len(self._route_cache) > self._route_cache_limit:
+            try:
+                self._route_cache.pop(next(iter(self._route_cache)))
+            except Exception:
+                break
+
+    def _reconstruct_bidirectional(
+        self,
+        meet: Tuple[int, int],
+        start: Tuple[int, int],
+        goal: Tuple[int, int],
+        parent_f: dict,
+        parent_b: dict,
+    ) -> List[Tuple[int, int]]:
+        # start -> meet from forward parents
+        left = [meet]
+        cur = meet
+        while cur in parent_f:
+            cur = parent_f[cur]
+            left.append(cur)
+        left.reverse()
+
+        # meet -> goal from backward parents
+        right = [meet]
+        cur = meet
+        while cur in parent_b:
+            cur = parent_b[cur]
+            right.append(cur)
+
+        # Avoid duplicating meet node
+        return left + right[1:]
+
+    def _find_path_bidirectional(
+        self,
+        start: Tuple[int, int],
+        goal: Tuple[int, int],
+        max_expansions: Optional[int],
+        corridor_bounds: Optional[Tuple[int, int, int, int]] = None,
+    ) -> Optional[List[Tuple[int, int]]]:
+        if start == goal:
+            return [start]
+
+        open_f: List[Tuple[float, Tuple[int, int]]] = []
+        open_b: List[Tuple[float, Tuple[int, int]]] = []
+        heapq.heappush(open_f, (0.0, start))
+        heapq.heappush(open_b, (0.0, goal))
+
+        g_f = {start: 0.0}
+        g_b = {goal: 0.0}
+        parent_f = {}
+        parent_b = {}
+        closed_f = set()
+        closed_b = set()
+
+        meet = None
+        best_total = float("inf")
+        expansions = 0
+
+        while open_f and open_b:
+            if max_expansions is not None and expansions > max_expansions:
+                return None
+
+            # Expand whichever frontier currently looks more promising.
+            expand_forward = open_f[0][0] <= open_b[0][0]
+            if expand_forward:
+                _fscore, current = heapq.heappop(open_f)
+                if current in closed_f:
+                    continue
+                closed_f.add(current)
+                expansions += 1
+
+                for neighbour, move_cost in self.get_neighbours(current):
+                    if corridor_bounds is not None and not self._in_bounds(neighbour, corridor_bounds):
+                        if neighbour != goal and neighbour != start:
+                            continue
+                    if not self.is_walkable(neighbour[0], neighbour[1], is_goal=(neighbour == goal)):
+                        continue
+
+                    tentative = g_f[current] + move_cost
+                    old = g_f.get(neighbour)
+                    if old is not None and tentative >= old:
+                        continue
+
+                    g_f[neighbour] = tentative
+                    parent_f[neighbour] = current
+                    h = self.heuristic(neighbour, goal)
+                    heapq.heappush(open_f, (tentative + (1.05 * h), neighbour))
+
+                    other = g_b.get(neighbour)
+                    if other is not None:
+                        total = tentative + other
+                        if total < best_total:
+                            best_total = total
+                            meet = neighbour
+            else:
+                _fscore, current = heapq.heappop(open_b)
+                if current in closed_b:
+                    continue
+                closed_b.add(current)
+                expansions += 1
+
+                for neighbour, move_cost in self.get_neighbours(current):
+                    if corridor_bounds is not None and not self._in_bounds(neighbour, corridor_bounds):
+                        if neighbour != goal and neighbour != start:
+                            continue
+                    if not self.is_walkable(neighbour[0], neighbour[1], is_goal=(neighbour == start)):
+                        continue
+
+                    tentative = g_b[current] + move_cost
+                    old = g_b.get(neighbour)
+                    if old is not None and tentative >= old:
+                        continue
+
+                    g_b[neighbour] = tentative
+                    parent_b[neighbour] = current
+                    h = self.heuristic(neighbour, start)
+                    heapq.heappush(open_b, (tentative + (1.05 * h), neighbour))
+
+                    other = g_f.get(neighbour)
+                    if other is not None:
+                        total = tentative + other
+                        if total < best_total:
+                            best_total = total
+                            meet = neighbour
+
+            if meet is not None:
+                # Stop when both frontiers cannot beat current best meeting cost.
+                if open_f and open_b and (open_f[0][0] + open_b[0][0]) >= best_total:
+                    return self._reconstruct_bidirectional(meet, start, goal, parent_f, parent_b)
+
+        if meet is not None:
+            return self._reconstruct_bidirectional(meet, start, goal, parent_f, parent_b)
         return None
     
     def is_walkable(self, row:int, column:int, is_goal:bool = False) -> bool:
@@ -206,8 +379,31 @@ class AStarPathfinder:
             print("Error, Goal is not a port")
             self.last_search_mode = 'failed'
             return None
+
+        cached = self._cache_get(start, goal)
+        if cached is not None:
+            self.last_search_mode = 'fast-cache'
+            return cached
+
+        dist = self.heuristic(start, goal)
+        pad = int(max(160.0, min(900.0, dist * 0.22)))
+        corridor = self._corridor_bounds(start, goal, pad)
         
-        # Fast pass
+        # Fast pass 1: weighted/coastal search inside a corridor around start-goal.
+        path = self._find_path_internal(
+            start,
+            goal,
+            heuristic_weight=self.heuristic_weight,
+            max_expansions=min(self.max_expansions, 550000),
+            coastal_penalty_scale=self.coastal_penalty_scale,
+            corridor_bounds=corridor,
+        )
+        if path:
+            self.last_search_mode = 'fast-corridor'
+            self._cache_put(start, goal, path)
+            return path
+
+        # Fast pass 2: weighted/coastal search across full map.
         path = self._find_path_internal(
             start,
             goal,
@@ -217,19 +413,37 @@ class AStarPathfinder:
         )
         if path:
             self.last_search_mode = 'fast'
+            self._cache_put(start, goal, path)
             return path
 
-        # Robust fallback: disable shortcuts that can occasionally miss long/complex routes.
-        path = self._find_path_internal(
-            start,
-            goal,
-            heuristic_weight=1.0,
-            max_expansions=None,
-            coastal_penalty_scale=0.0,
-        )
-        if path:
-            self.last_search_mode = 'fallback'
-            return path
+        # Long routes benefit from bidirectional search before full fallback.
+        if dist >= self.long_route_threshold:
+            for limit in (120000, 260000):
+                path = self._find_path_bidirectional(
+                    start,
+                    goal,
+                    max_expansions=limit,
+                    corridor_bounds=corridor,
+                )
+                if path:
+                    self.last_search_mode = 'bidirectional'
+                    self._cache_put(start, goal, path)
+                    return path
+
+        # Robust fallback in stages to avoid jumping immediately to unlimited search.
+        for limit in (180000, 420000, None):
+            path = self._find_path_internal(
+                start,
+                goal,
+                heuristic_weight=1.0,
+                max_expansions=limit,
+                coastal_penalty_scale=0.0,
+                corridor_bounds=corridor if limit in (180000, 420000) else None,
+            )
+            if path:
+                self.last_search_mode = 'fallback' if limit is None else 'fallback-limited'
+                self._cache_put(start, goal, path)
+                return path
 
         print("No path found between these ports")
         self.last_search_mode = 'failed'
