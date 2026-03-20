@@ -151,6 +151,11 @@ class PathfinderGUI:
             if len(self.ship_profile_names) >= 3
             else self.ship_profile_names[0]
         )
+        self.selected_load_type = "FCL"
+        self._last_load_type = self.selected_load_type
+        self.load_type_names = ["FCL", "LCL"]
+        self.selected_cargo_mass_tonnes = None
+        self.selected_cargo_volume_m3 = None
         self.cost_estimator = self.build_cost_estimator(self.selected_ship_profile)
         # Reuse one estimator so HTTP/session and weather cache are shared between routes.
         self.weather_estimator = WeatherImpactEstimator()
@@ -225,6 +230,58 @@ class PathfinderGUI:
         self.ship_profile_menu.configure(font=("Arial", 18, "bold"))
         self.ship_profile_menu.grid(row=2, column=1, padx=10, pady=4)
         self.enable_ship_profile_autocomplete(self.ship_profile_menu, self.ship_profile_var)
+
+        tk.Label(
+            frame,
+            text="Load Type:",
+            font=("Arial", 12, "bold"),
+            bg="#e8f0f8",
+        ).grid(row=3, column=0, padx=10, pady=4, sticky="e")
+        self.load_type_var = tk.StringVar(value=self.selected_load_type)
+        self.load_type_menu = ttk.Combobox(
+            frame,
+            textvariable=self.load_type_var,
+            values=self.load_type_names,
+            state="readonly",
+            width=58,
+            style="StartGoal.TCombobox",
+        )
+        self.load_type_menu.configure(font=("Arial", 18, "bold"))
+        self.load_type_menu.grid(row=3, column=1, padx=10, pady=4)
+
+        self.cargo_mass_label = tk.Label(
+            frame,
+            text="Cargo Mass (tonnes):",
+            font=("Arial", 12, "bold"),
+            bg="#e8f0f8",
+        )
+        self.cargo_mass_label.grid(row=4, column=0, padx=10, pady=4, sticky="e")
+        self.cargo_mass_var = tk.StringVar(value="")
+        self.cargo_mass_entry = ttk.Entry(
+            frame,
+            textvariable=self.cargo_mass_var,
+            width=60,
+            font=("Arial", 14),
+        )
+        self.cargo_mass_entry.grid(row=4, column=1, padx=10, pady=4)
+
+        self.cargo_volume_label = tk.Label(
+            frame,
+            text="Cargo Volume (m^3):",
+            font=("Arial", 12, "bold"),
+            bg="#e8f0f8",
+        )
+        self.cargo_volume_label.grid(row=5, column=0, padx=10, pady=4, sticky="e")
+        self.cargo_volume_var = tk.StringVar(value="")
+        self.cargo_volume_entry = ttk.Entry(
+            frame,
+            textvariable=self.cargo_volume_var,
+            width=60,
+            font=("Arial", 14),
+        )
+        self.cargo_volume_entry.grid(row=5, column=1, padx=10, pady=4)
+        self.load_type_menu.bind("<<ComboboxSelected>>", self.on_load_type_changed)
+        self.update_cargo_input_visibility()
 
         # ── Buttons ──
         btn_frame = tk.Frame(root, bg="#e8f0f8")
@@ -682,6 +739,108 @@ class PathfinderGUI:
             return coords
         return fallback
 
+    def on_load_type_changed(self, _event=None):
+        self.update_cargo_input_visibility()
+
+    def update_cargo_input_visibility(self):
+        current_load_type = (self.load_type_var.get() or "").strip().upper()
+        is_lcl = current_load_type == "LCL"
+
+        # If switching away from LCL, clear cargo fields to avoid stale values.
+        if self._last_load_type == "LCL" and current_load_type != "LCL":
+            self.cargo_mass_var.set("")
+            self.cargo_volume_var.set("")
+            self.selected_cargo_mass_tonnes = None
+            self.selected_cargo_volume_m3 = None
+
+        if is_lcl:
+            self.cargo_mass_label.grid()
+            self.cargo_mass_entry.grid()
+            self.cargo_volume_label.grid()
+            self.cargo_volume_entry.grid()
+        else:
+            self.cargo_mass_label.grid_remove()
+            self.cargo_mass_entry.grid_remove()
+            self.cargo_volume_label.grid_remove()
+            self.cargo_volume_entry.grid_remove()
+
+        self._last_load_type = current_load_type
+
+    def build_cost_text(self, start_name, goal_name, path_length, cost_data):
+        if "error" in cost_data:
+            return (
+                f"Route: {start_name} → {goal_name}\n"
+                f"Path length: {path_length} steps\n\n"
+                f"Cost estimate unavailable: {cost_data['error']}"
+            )
+
+        distance_nm = cost_data.get("distance_nm", 0)
+        time_days = cost_data.get("time_days", 0)
+        load_type = cost_data.get("load_type", self.selected_load_type)
+        cargo_mass = cost_data.get("cargo_mass_tonnes")
+        cargo_volume = cost_data.get("cargo_volume_m3")
+        cargo_defaults_applied = cost_data.get("cargo_defaults_applied", False)
+        density = cost_data.get("density_t_per_m3")
+        pricing_basis = cost_data.get("pricing_basis", "N/A")
+        chargeable_qty = cost_data.get("chargeable_quantity")
+        contingency = cost_data.get("contingency_usd", 0)
+        total = cost_data.get("formatted_total", f"${cost_data.get('total_cost_usd', 0):,}")
+        divider = "-" * 40
+        mass_text = f"{cargo_mass:,.2f} tonnes" if cargo_mass is not None else "N/A"
+        volume_text = f"{cargo_volume:,.2f} m^3" if cargo_volume is not None else "N/A"
+        defaults_note = " (assumed defaults)" if cargo_defaults_applied else ""
+
+        header = (
+            f"Route: {start_name} → {goal_name}\n"
+            f"Ship profile: {self.selected_ship_profile}\n"
+            f"Load type: {load_type}\n"
+            f"Cargo mass: {mass_text}{defaults_note}\n"
+            f"Cargo volume: {volume_text}{defaults_note}\n"
+            f"Density: {density if density is not None else 'N/A'} t/m^3\n"
+            f"Pricing basis: {pricing_basis}\n"
+            f"Chargeable quantity: {chargeable_qty if chargeable_qty is not None else 'N/A'}\n"
+            f"Distance: {distance_nm:,} nautical miles\n"
+            f"Time at sea: ~{time_days} days\n"
+            f"{divider}\n"
+        )
+
+        if load_type == "LCL":
+            ocean_freight = cost_data.get("ocean_freight_usd", 0)
+            origin_thc = cost_data.get("origin_thc_usd", 0)
+            destination_thc = cost_data.get("destination_thc_usd", 0)
+            fuel_surcharge = cost_data.get("fuel_surcharge_usd", 0)
+            distance_surcharge = cost_data.get("distance_surcharge_usd", 0)
+            fixed_fees = cost_data.get("fixed_fees_usd", 0)
+            revenue_tonnes = cost_data.get("revenue_tonnes", 0)
+            body = (
+                f"Revenue tonnes (W/M): {revenue_tonnes}\n"
+                f"Ocean freight:      ${ocean_freight:,}\n"
+                f"Origin THC:         ${origin_thc:,}\n"
+                f"Destination THC:    ${destination_thc:,}\n"
+                f"Fuel surcharge:     ${fuel_surcharge:,}\n"
+                f"Distance surcharge: ${distance_surcharge:,}\n"
+                f"Fixed fees:         ${fixed_fees:,}\n"
+            )
+        else:
+            allocated_voyage = cost_data.get("allocated_voyage_usd", 0)
+            terminal_handling = cost_data.get("terminal_handling_usd", 0)
+            documentation_fee = cost_data.get("documentation_fee_usd", 0)
+            allocation_share = cost_data.get("allocation_share")
+            share_text = f"{allocation_share * 100:.3f}%" if allocation_share is not None else "N/A"
+            body = (
+                f"Allocated voyage share: {share_text}\n"
+                f"Allocated voyage cost: ${allocated_voyage:,}\n"
+                f"Terminal handling:     ${terminal_handling:,}\n"
+                f"Documentation fee:     ${documentation_fee:,}\n"
+            )
+
+        footer = (
+            f"Contingency:        ${contingency:,}\n"
+            f"{divider}\n"
+            f"TOTAL ESTIMATED COST: {total}"
+        )
+        return header + body + footer
+
     def find_route(self):
         start_label = self.start_var.get()
         goal_label = self.goal_var.get()
@@ -708,7 +867,46 @@ class PathfinderGUI:
             )
             return
 
+        load_type = (self.load_type_var.get() or "").strip().upper()
+        if load_type not in ("FCL", "LCL"):
+            messagebox.showerror(
+                "Selection Error",
+                "Please choose either FCL or LCL for load type."
+            )
+            return
+
+        cargo_mass_text = (self.cargo_mass_var.get() or "").strip()
+        cargo_volume_text = (self.cargo_volume_var.get() or "").strip()
+        cargo_mass_tonnes = None
+        cargo_volume_m3 = None
+        if cargo_mass_text or cargo_volume_text:
+            if not cargo_mass_text or not cargo_volume_text:
+                messagebox.showerror(
+                    "Selection Error",
+                    "Enter both cargo mass and cargo volume, or leave both blank."
+                )
+                return
+            try:
+                cargo_mass_tonnes = float(cargo_mass_text)
+                cargo_volume_m3 = float(cargo_volume_text)
+            except ValueError:
+                messagebox.showerror(
+                    "Selection Error",
+                    "Cargo mass and cargo volume must be valid numbers."
+                )
+                return
+
+            if cargo_mass_tonnes <= 0 or cargo_volume_m3 <= 0:
+                messagebox.showerror(
+                    "Selection Error",
+                    "Cargo mass and cargo volume must be greater than zero."
+                )
+                return
+
         self.selected_ship_profile = ship_profile_name
+        self.selected_load_type = load_type
+        self.selected_cargo_mass_tonnes = cargo_mass_tonnes
+        self.selected_cargo_volume_m3 = cargo_volume_m3
         self.cost_estimator = self.build_cost_estimator(ship_profile_name)
 
         start_name = start_port["name"]
@@ -773,7 +971,12 @@ class PathfinderGUI:
                     self.status_label.config(text=f"Route found! {length} steps")
 
                 # Calculate cost
-                cost_data = self.cost_estimator.estimate(length)
+                cost_data = self.cost_estimator.estimate(
+                    length,
+                    load_type=self.selected_load_type,
+                    cargo_mass_tonnes=self.selected_cargo_mass_tonnes,
+                    cargo_volume_m3=self.selected_cargo_volume_m3,
+                )
 
                 # Start a background weather fetch so the UI doesn't block.
                 # We display base cost now, then update the UI when weather completes.
@@ -810,63 +1013,19 @@ class PathfinderGUI:
                         weather_samples = None
 
                 if multiplier != 1.0:
-                    # Adjust time-based components while keeping distance unchanged
-                    base_time_days = cost_data.get("time_days", 0)
-                    adjusted_time_days = round(base_time_days * multiplier, 1)
-
-                    # Recompute fuel and operating costs using adjusted time
-                    fuel_cost = adjusted_time_days * self.cost_estimator.fuel_consumption_tpd * self.cost_estimator.fuel_price_per_tonne
-                    operating_cost = adjusted_time_days * self.cost_estimator.daily_operating_cost
-                    port_fees = cost_data.get("port_fees_usd", 0)
-                    subtotal = fuel_cost + operating_cost + port_fees
-                    contingency = subtotal * self.cost_estimator.contingency_percent
-                    total = subtotal + contingency
-
-                    # Update displayed cost data
-                    cost_data.update({
-                        "time_days": adjusted_time_days,
-                        "fuel_cost_usd": round(fuel_cost),
-                        "operating_cost_usd": round(operating_cost),
-                        "port_fees_usd": round(port_fees),
-                        "contingency_usd": round(contingency),
-                        "total_cost_usd": round(total),
-                        "formatted_total": f"${round(total):,}",
-                        "weather_summary": weather_summary,
-                        "weather_multiplier": round(multiplier, 3),
-                    })
-                else:
-                    cost_data["weather_summary"] = weather_summary
-
-                if "error" in cost_data:
-                    cost_text = (
-                        f"Route: {start_name} → {goal_name}\n"
-                        f"Path length: {length} steps\n\n"
-                        f"Cost estimate unavailable: {cost_data['error']}"
+                    cost_data = self.cost_estimator.estimate(
+                        length,
+                        load_type=self.selected_load_type,
+                        cargo_mass_tonnes=self.selected_cargo_mass_tonnes,
+                        cargo_volume_m3=self.selected_cargo_volume_m3,
+                        time_multiplier=multiplier,
                     )
-                else:
-                    distance_nm = cost_data.get("distance_nm", 0)
-                    time_days = cost_data.get("time_days", 0)
-                    fuel_cost = cost_data.get("fuel_cost_usd", 0)
-                    operating_cost = cost_data.get("operating_cost_usd", 0)
-                    port_fees = cost_data.get("port_fees_usd", 0)
-                    contingency = cost_data.get("contingency_usd", 0)
-                    total = cost_data.get("formatted_total", f"${cost_data.get('total_cost_usd', 0):,}")
-                    divider = "-" * 40
 
-                    # Show cost in text box
-                    cost_text = (
-                        f"Route: {start_name} → {goal_name}\n"
-                        f"Ship profile: {self.selected_ship_profile}\n"
-                        f"Distance: {distance_nm:,} nautical miles\n"
-                        f"Time at sea: ~{time_days} days\n"
-                        f"{divider}\n"
-                        f"Fuel cost:          ${fuel_cost:,}\n"
-                        f"Operating cost:     ${operating_cost:,}\n"
-                        f"Port fees (start+goal): ${port_fees:,}\n"
-                        f"Contingency:        ${contingency:,}\n"
-                        f"{divider}\n"
-                        f"TOTAL ESTIMATED COST: {total}"
-                    )
+                cost_data["weather_summary"] = weather_summary
+                if multiplier != 1.0:
+                    cost_data["weather_multiplier"] = round(multiplier, 3)
+
+                cost_text = self.build_cost_text(start_name, goal_name, length, cost_data)
                 # Weather details are shown in the separate weather panel, not the cost box.
 
                 self.cost_text.config(state="normal")
@@ -1099,58 +1258,21 @@ class PathfinderGUI:
 
             # update cost_data if needed
             if multiplier != 1.0:
-                base_time_days = cost_data.get('time_days', 0)
-                adjusted_time_days = round(base_time_days * multiplier, 1)
-                fuel_cost = adjusted_time_days * self.cost_estimator.fuel_consumption_tpd * self.cost_estimator.fuel_price_per_tonne
-                operating_cost = adjusted_time_days * self.cost_estimator.daily_operating_cost
-                port_fees = cost_data.get('port_fees_usd', 0)
-                subtotal = fuel_cost + operating_cost + port_fees
-                contingency = subtotal * self.cost_estimator.contingency_percent
-                total = subtotal + contingency
-                cost_data.update({
-                    'time_days': adjusted_time_days,
-                    'fuel_cost_usd': round(fuel_cost),
-                    'operating_cost_usd': round(operating_cost),
-                    'port_fees_usd': round(port_fees),
-                    'contingency_usd': round(contingency),
-                    'total_cost_usd': round(total),
-                    'formatted_total': f"${round(total):,}",
-                    'weather_summary': weather_summary,
-                    'weather_multiplier': round(multiplier, 3),
-                })
-            else:
-                cost_data['weather_summary'] = weather_summary
+                cost_data = self.cost_estimator.estimate(
+                    len(path) - 1,
+                    load_type=self.selected_load_type,
+                    cargo_mass_tonnes=self.selected_cargo_mass_tonnes,
+                    cargo_volume_m3=self.selected_cargo_volume_m3,
+                    time_multiplier=multiplier,
+                )
+
+            cost_data['weather_summary'] = weather_summary
+            if multiplier != 1.0:
+                cost_data['weather_multiplier'] = round(multiplier, 3)
 
             # refresh cost_text
             try:
-                if 'error' in cost_data:
-                    cost_text = (
-                        f"Route: {start_name} → {goal_name}\n"
-                        f"Path length: {len(path) - 1} steps\n\n"
-                        f"Cost estimate unavailable: {cost_data['error']}"
-                    )
-                else:
-                    distance_nm = cost_data.get('distance_nm', 0)
-                    time_days = cost_data.get('time_days', 0)
-                    fuel_cost = cost_data.get('fuel_cost_usd', 0)
-                    operating_cost = cost_data.get('operating_cost_usd', 0)
-                    port_fees = cost_data.get('port_fees_usd', 0)
-                    contingency = cost_data.get('contingency_usd', 0)
-                    total = cost_data.get('formatted_total', f"${cost_data.get('total_cost_usd', 0):,}")
-                    divider = '-' * 40
-                    cost_text = (
-                        f"Route: {start_name} → {goal_name}\n"
-                        f"Ship profile: {self.selected_ship_profile}\n"
-                        f"Distance: {distance_nm:,} nautical miles\n"
-                        f"Time at sea: ~{time_days} days\n"
-                        f"{divider}\n"
-                        f"Fuel cost:          ${fuel_cost:,}\n"
-                        f"Operating cost:     ${operating_cost:,}\n"
-                        f"Port fees (start+goal): ${port_fees:,}\n"
-                        f"Contingency:        ${contingency:,}\n"
-                        f"{divider}\n"
-                        f"TOTAL ESTIMATED COST: {total}"
-                    )
+                cost_text = self.build_cost_text(start_name, goal_name, len(path) - 1, cost_data)
                 # Weather details shown in the weather panel (not in cost text).
 
                 self.cost_text.config(state='normal')
