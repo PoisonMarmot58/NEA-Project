@@ -2,6 +2,7 @@
 
 import numpy as np
 import heapq
+import math
 from typing import List, Tuple, Optional
 
 class Grid:
@@ -59,7 +60,8 @@ class AStarPathfinder:
         self.grid = grid
         # Cache coastal penalties so neighbor expansion does not repeatedly
         # rescan surrounding cells for the same coordinates.
-        self._coastal_penalty_cache = {}
+        # Cache stores raw count of neighbouring non-water cells per cell.
+        self._coastal_nonwater_count = {}
         # Slightly weighted heuristic for faster convergence on long routes.
         # Values >1.0 trade exact optimality for speed.
         self.heuristic_weight = 1.15
@@ -69,33 +71,33 @@ class AStarPathfinder:
         self.coastal_penalty_scale = 0.3
         # Exposed status for UI: 'fast', 'fallback', 'failed', or None.
         self.last_search_mode: Optional[str] = None
+        # Precompute neighbor offsets and movement costs to avoid allocations.
+        self._directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
+        self._diag_cost = math.sqrt(2.0)
 
     def heuristic(self, a:Tuple[int,int], b: Tuple[int,int]) -> float:
-        return ((a[0]-b[0]) ** 2 + (a[1] - b[1]) **2) **0.5
+        # use math.hypot implemented in C for speed
+        return math.hypot(a[0]-b[0], a[1]-b[1])
     
     def get_neighbours(self, pos:Tuple[int,int])-> List[Tuple[Tuple[int,int], float]]:
         row, column = pos
-        # Use 8-connected neighbors to allow more natural offshore routing.
-        directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
-
-        neighbours = []
-        for dr, dc in directions:
-            newRow, newColumn = (row + dr), (column + dc)
+        neighbours: List[Tuple[Tuple[int,int], float]] = []
+        for dr, dc in self._directions:
+            newRow, newColumn = row + dr, column + dc
             if self.grid.is_valid(newRow, newColumn):
-                # movement cost: straight moves cost 1, diagonals cost sqrt(2)
-                move_cost = 1.0 if (dr == 0 or dc == 0) else 2 ** 0.5
+                move_cost = 1.0 if (dr == 0 or dc == 0) else self._diag_cost
                 neighbours.append(((newRow, newColumn), move_cost))
         return neighbours
 
     def _coastal_penalty(self, cell: Tuple[int, int], scale: float) -> float:
-        """Return cached coastal penalty for a cell.
+        """Return coastal penalty for a cell using cached non-water counts.
 
-        Cells surrounded by more non-water neighbors are penalized to prefer
-        offshore paths.
+        Cache stores the raw count of adjacent non-water cells so the penalty
+        computation is a cheap multiplication by the provided scale.
         """
-        key = (cell, float(scale))
-        if key in self._coastal_penalty_cache:
-            return self._coastal_penalty_cache[key]
+        if cell in self._coastal_nonwater_count:
+            count_non_water = self._coastal_nonwater_count[cell]
+            return float(scale) * count_non_water
 
         r0, c0 = cell
         count_non_water = 0
@@ -109,9 +111,8 @@ class AStarPathfinder:
                 if not self.grid.is_water(rr, cc):
                     count_non_water += 1
 
-        penalty = float(scale) * count_non_water
-        self._coastal_penalty_cache[key] = penalty
-        return penalty
+        self._coastal_nonwater_count[cell] = count_non_water
+        return float(scale) * count_non_water
 
     def _reconstruct_path(self, cameFrom: dict, start: Tuple[int, int], goal: Tuple[int, int]) -> List[Tuple[int, int]]:
         path = []
@@ -131,8 +132,8 @@ class AStarPathfinder:
         max_expansions: Optional[int],
         coastal_penalty_scale: float,
     ) -> Optional[List[Tuple[int, int]]]:
-        openSet = []
-        heapq.heappush(openSet, (0, start))
+        openSet: List[Tuple[float, Tuple[int,int]]] = []
+        heapq.heappush(openSet, (0.0, start))
 
         cameFrom = {}
         currentScore = {start: 0.0}
@@ -152,13 +153,18 @@ class AStarPathfinder:
             if current == goal:
                 return self._reconstruct_path(cameFrom, start, goal)
 
-            for neighbour, move_cost in self.get_neighbours(current):
+            # Local bindings for speed
+            neigh_func = self.get_neighbours
+            walkable = self.is_walkable
+            cost_func = self._coastal_penalty
+            hw = heuristic_weight
+            for neighbour, move_cost in neigh_func(current):
                 isNeighbourGoal = (neighbour == goal)
-                if not self.is_walkable(neighbour[0], neighbour[1], isNeighbourGoal):
+                if not walkable(neighbour[0], neighbour[1], isNeighbourGoal):
                     continue
 
                 tentativeScore = currentScore[current] + move_cost
-                tentativeScore += self._coastal_penalty(neighbour, coastal_penalty_scale)
+                tentativeScore += cost_func(neighbour, coastal_penalty_scale)
 
                 prev = currentScore.get(neighbour)
                 if prev is not None and tentativeScore >= prev:
@@ -171,7 +177,7 @@ class AStarPathfinder:
                 if neighbour in closedSet:
                     closedSet.remove(neighbour)
 
-                fscore = tentativeScore + (heuristic_weight * self.heuristic(neighbour, goal))
+                fscore = tentativeScore + (hw * self.heuristic(neighbour, goal))
                 heapq.heappush(openSet, (fscore, neighbour))
 
         return None

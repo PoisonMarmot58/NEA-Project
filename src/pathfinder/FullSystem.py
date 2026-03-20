@@ -1398,6 +1398,18 @@ class PathfinderGUI:
             self._view_animating = False
             self._view_anim_after_id = None
 
+    def _stop_view_animation(self):
+        """Stop any smooth view animation in progress."""
+        self._view_interaction_mode = "idle"
+        self._view_target = None
+        self._view_animating = False
+        if getattr(self, '_view_anim_after_id', None) is not None:
+            try:
+                self.root.after_cancel(self._view_anim_after_id)
+            except Exception:
+                pass
+        self._view_anim_after_id = None
+
     def on_pan_press(self, event):
         # Left mouse button starts panning when pointer is inside axes.
         if event.inaxes != self.ax or event.button != 1:
@@ -1408,6 +1420,11 @@ class PathfinderGUI:
             return
 
         self._stop_pan_inertia()
+        # Stop any smooth view animation so immediate panning is deterministic
+        try:
+            self._stop_view_animation()
+        except Exception:
+            pass
         self._view_interaction_mode = "pan"
         self._pan_active = True
         # Track pixel-space mouse position for stable drag math.
@@ -1434,30 +1451,24 @@ class PathfinderGUI:
         dt = max(1e-4, now - (self._pan_last_ts or now))
         self._pan_last_ts = now
 
-        base_x0, base_x1, base_y0, base_y1 = self._view_target or self._get_current_window_normalized()
+        # Use the current window for base coordinates (avoid using a pending
+        # _view_target which can cause oscillation when the view animation
+        # and direct dragging fight each other).
+        base_x0, base_x1, base_y0, base_y1 = self._get_current_window_normalized()
 
-        # Prefer data-space deltas for stable, low-jitter panning at all zoom levels.
-        x_shift = None
-        y_shift = None
-        if event.xdata is not None and event.ydata is not None:
-            last_dx, last_dy = self._pan_last_data or (None, None)
-            if last_dx is not None and last_dy is not None:
-                x_shift = -(float(event.xdata) - float(last_dx))
-                y_shift = -(float(event.ydata) - float(last_dy))
-            self._pan_last_data = (float(event.xdata), float(event.ydata))
-
-        if x_shift is None or y_shift is None:
-            bbox = self.ax.bbox
-            if bbox is None or bbox.width == 0 or bbox.height == 0:
-                return
-            cur_xlim = self.ax.get_xlim()
-            cur_ylim = self.ax.get_ylim()
-            xsign = -1.0 if cur_xlim[0] > cur_xlim[1] else 1.0
-            ysign = -1.0 if cur_ylim[0] > cur_ylim[1] else 1.0
-            xspan_signed = (base_x1 - base_x0) * xsign
-            yspan_signed = (base_y1 - base_y0) * ysign
-            x_shift = -dx_px * (xspan_signed / bbox.width)
-            y_shift = -dy_px * (yspan_signed / bbox.height)
+        # Always use pixel-space deltas mapped into data-space. Mixing xdata/ydata
+        # with pixel deltas can introduce feedback jitter when zoomed in.
+        bbox = self.ax.bbox
+        if bbox is None or bbox.width == 0 or bbox.height == 0:
+            return
+        cur_xlim = self.ax.get_xlim()
+        cur_ylim = self.ax.get_ylim()
+        xsign = -1.0 if cur_xlim[0] > cur_xlim[1] else 1.0
+        ysign = -1.0 if cur_ylim[0] > cur_ylim[1] else 1.0
+        xspan_signed = (base_x1 - base_x0) * xsign
+        yspan_signed = (base_y1 - base_y0) * ysign
+        x_shift = -dx_px * (xspan_signed / bbox.width)
+        y_shift = -dy_px * (yspan_signed / bbox.height)
 
         # Shift window so map content follows mouse drag direction.
         x0 = base_x0 + x_shift
@@ -1473,7 +1484,19 @@ class PathfinderGUI:
             (old_vx * 0.65) + (inst_vx * 0.35),
             (old_vy * 0.65) + (inst_vy * 0.35),
         )
-        self._queue_view_target(x0, x1, y0, y1)
+
+        # Apply view immediately for a crisp, linear pan (avoid queuing animations)
+        try:
+            self._stop_view_animation()
+        except Exception:
+            pass
+        self._view_interaction_mode = "pan"
+        self._set_window_from_normalized(x0, x1, y0, y1)
+        self._draw_interaction_frame(force=False)
+        self._pan_last_data = (
+            float(event.xdata) if event.xdata is not None else None,
+            float(event.ydata) if event.ydata is not None else None,
+        )
 
     def on_pan_release(self, event):
         if event.button == 1:
@@ -1523,7 +1546,8 @@ class PathfinderGUI:
             self._view_interaction_mode = "idle"
             return
 
-        base_x0, base_x1, base_y0, base_y1 = self._view_target or self._get_current_window_normalized()
+        # Use current window as base to avoid fighting any pending targets.
+        base_x0, base_x1, base_y0, base_y1 = self._get_current_window_normalized()
         x_shift = vx * dt
         y_shift = vy * dt
         x0 = base_x0 + x_shift
@@ -1532,7 +1556,14 @@ class PathfinderGUI:
         y1 = base_y1 + y_shift
         x0, x1, y0, y1 = self._clamp_window_normalized(x0, x1, y0, y1)
         self._view_interaction_mode = "pan"
-        self._queue_view_target(x0, x1, y0, y1)
+
+        # Apply the inertia step immediately (direct window set) for smooth linear motion
+        try:
+            self._stop_view_animation()
+        except Exception:
+            pass
+        self._set_window_from_normalized(x0, x1, y0, y1)
+        self._draw_interaction_frame(force=False)
 
         delay_ms = max(1, int(round(1000.0 / self._view_fps)))
         try:
