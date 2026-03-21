@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -10,6 +11,11 @@ except Exception:
 
 
 class RouteCostEstimator:
+	# Shared process-wide cache/cooldown to avoid hammering remote endpoints.
+	_shared_price_cache: Optional[float] = None
+	_shared_price_cache_ts: float = 0.0
+	_remote_cooldown_until_ts: float = 0.0
+
 	"""
 	Parameters:
 	- cell_size_nm: Nautical miles represented by one grid cell
@@ -67,6 +73,13 @@ class RouteCostEstimator:
 		# refining/logistics and typical bunker spreads.
 		self.oil_barrels_per_tonne = 7.4
 		self.oil_to_bunker_markup = 1.12
+		# Public website endpoint used as a default oil price source (USD/barrel).
+		self.default_oil_price_url = "https://query1.finance.yahoo.com/v8/finance/chart/BZ=F?interval=1d&range=5d"
+		self.remote_refresh_interval_seconds = max(
+			300,
+			int(os.environ.get("BUNKER_PRICE_REFRESH_INTERVAL_SECONDS", "1800")),
+		)
+		self.last_price_source = "profile_default"
 
 		# Try to refresh price from environment / file / remote if requested
 		if auto_refresh_prices:
@@ -140,6 +153,7 @@ class RouteCostEstimator:
 				"total_cost_usd": round(total_cost),
 				"formatted_total": f"${round(total_cost):,}",
 				"fuel_price_per_tonne": round(self.fuel_price_per_tonne, 2),
+				"fuel_price_source": self.last_price_source,
 				"load_type": load_key,
 				"cargo_mass_tonnes": round(cargo_mass_tonnes, 3),
 				"cargo_volume_m3": round(cargo_volume_m3, 3),
@@ -195,6 +209,7 @@ class RouteCostEstimator:
 			"total_cost_usd": round(total_cost),
 			"formatted_total": f"${round(total_cost):,}",
 			"fuel_price_per_tonne": round(self.fuel_price_per_tonne, 2),
+			"fuel_price_source": self.last_price_source,
 			"load_type": load_key,
 			"cargo_mass_tonnes": round(cargo_mass_tonnes, 3),
 			"cargo_volume_m3": round(cargo_volume_m3, 3),
@@ -227,6 +242,97 @@ class RouteCostEstimator:
 		print("  ────────────────────────────────────")
 		print(f"  TOTAL:         {cost_data['formatted_total']}")
 
+	def _set_fuel_price(self, value: float, source: Optional[str] = None) -> None:
+		self.fuel_price_per_tonne = float(value)
+		RouteCostEstimator._shared_price_cache = float(value)
+		RouteCostEstimator._shared_price_cache_ts = time.time()
+		if source:
+			self.last_price_source = source
+
+	def _get_json_with_retry(self, url: str, timeout: int = 6, attempts: int = 3):
+		"""Fetch JSON with basic 429-aware backoff and browser-like headers."""
+		if requests is None:
+			return None
+
+		headers = {
+			"User-Agent": (
+				"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+				"AppleWebKit/537.36 (KHTML, like Gecko) "
+				"Chrome/123.0.0.0 Safari/537.36"
+			),
+			"Accept": "application/json,text/plain,*/*",
+		}
+
+		last_exc = None
+		for attempt in range(attempts):
+			try:
+				resp = requests.get(url, timeout=timeout, headers=headers)
+				if resp.status_code == 429:
+					retry_after = resp.headers.get("Retry-After")
+					try:
+						sleep_s = max(1, int(retry_after)) if retry_after else min(60, 2 ** (attempt + 1))
+					except Exception:
+						sleep_s = min(60, 2 ** (attempt + 1))
+
+					# Global cooldown so new estimator instances don't immediately retry.
+					RouteCostEstimator._remote_cooldown_until_ts = time.time() + sleep_s
+					self.last_price_source = "remote_rate_limited"
+					if attempt < attempts - 1:
+						time.sleep(sleep_s)
+						continue
+					return None
+
+				resp.raise_for_status()
+				return resp.json()
+			except Exception as exc:
+				last_exc = exc
+				if attempt < attempts - 1:
+					time.sleep(min(10, 2 ** attempt))
+
+		if last_exc is not None:
+			return None
+		return None
+
+	def _extract_numeric_by_keys(self, data, keys) -> Optional[float]:
+		"""Recursively find first numeric value for any key in `keys`."""
+		if isinstance(data, dict):
+			for k, v in data.items():
+				if k in keys:
+					try:
+						return float(v)
+					except Exception:
+						pass
+				out = self._extract_numeric_by_keys(v, keys)
+				if out is not None:
+					return out
+		elif isinstance(data, list):
+			for item in data:
+				out = self._extract_numeric_by_keys(item, keys)
+				if out is not None:
+					return out
+		return None
+
+	def _extract_oil_price_per_barrel(self, data) -> Optional[float]:
+		"""Extract oil price from common API payload shapes (e.g. Yahoo Finance)."""
+		# Prefer explicit oil-related keys first.
+		keys = {
+			"regularMarketPrice",
+			"previousClose",
+			"price_usd_per_barrel",
+			"oil_price",
+			"brent",
+			"wti",
+			"price",
+			"value",
+		}
+		val = self._extract_numeric_by_keys(data, keys)
+		if val is None:
+			return None
+		# Keep a realistic oil range to avoid timestamps/volume values.
+		if 10.0 <= val <= 300.0:
+			return val
+		return None
+
 	def refresh_prices(self, prices_json_path: Optional[str] = None) -> None:
 		"""Refresh bunker price using environment, a local JSON file, or
 		a remote URL. This method updates `self.fuel_price_per_tonne` when a
@@ -235,11 +341,19 @@ class RouteCostEstimator:
 		`prices_json_path` can be used to point to a specific JSON file. If
 		not provided the method looks for `src/pathfinder/data/prices.json`.
 		"""
+		now_ts = time.time()
+		cached = RouteCostEstimator._shared_price_cache
+		cached_age = now_ts - RouteCostEstimator._shared_price_cache_ts
+		if cached is not None and cached_age < self.remote_refresh_interval_seconds:
+			self.fuel_price_per_tonne = float(cached)
+			self.last_price_source = "shared_cache"
+			return
+
 		# 1) Environment variable override
 		env_price = os.environ.get("BUNKER_PRICE_PER_TON")
 		if env_price:
 			try:
-				self.fuel_price_per_tonne = float(env_price)
+				self._set_fuel_price(float(env_price), source="env_bunker_price")
 				return
 			except ValueError:
 				pass
@@ -255,32 +369,26 @@ class RouteCostEstimator:
 				raw = json.loads(p.read_text(encoding="utf-8"))
 				val = raw.get("bunker_price_per_tonne") or raw.get("fuel_price_per_tonne")
 				if val:
-					self.fuel_price_per_tonne = float(val)
+					self._set_fuel_price(float(val), source="local_prices_json")
 					return
 			except Exception:
 				pass
 
+		allow_remote = time.time() >= RouteCostEstimator._remote_cooldown_until_ts
+		if not allow_remote:
+			self.last_price_source = "remote_cooldown"
+
 		# 3) Remote fetch (optional) via BUNKER_PRICE_URL
 		url = os.environ.get("BUNKER_PRICE_URL")
-		if url and requests is not None:
+		if url and requests is not None and allow_remote:
 			try:
-				resp = requests.get(url, timeout=6)
-				resp.raise_for_status()
-				data = resp.json()
-				# Try common keys
-				for key in ("price", "bunker_price_per_tonne", "fuel_price_per_tonne", "value"):
-					v = data.get(key)
-					if v:
-						self.fuel_price_per_tonne = float(v)
-						return
-				# Nested search: look for numeric value in first level
-				for v in data.values():
-					try:
-						if isinstance(v, (int, float)):
-							self.fuel_price_per_tonne = float(v)
-							return
-					except Exception:
-						continue
+				data = self._get_json_with_retry(url, timeout=6, attempts=3)
+				if not data:
+					raise ValueError("No data returned from remote bunker price source")
+				v = self._extract_numeric_by_keys(data, {"bunker_price_per_tonne", "fuel_price_per_tonne", "price", "value"})
+				if v is not None and 50.0 <= v <= 2500.0:
+					self._set_fuel_price(float(v), source="remote_bunker_url")
+					return
 			except Exception:
 				# Ignore remote errors
 				pass
@@ -291,7 +399,10 @@ class RouteCostEstimator:
 		if oil_env:
 			try:
 				oil_val = float(oil_env)
-				self.fuel_price_per_tonne = oil_val * self.oil_barrels_per_tonne * self.oil_to_bunker_markup
+				self._set_fuel_price(
+					oil_val * self.oil_barrels_per_tonne * self.oil_to_bunker_markup,
+					source="env_oil_price",
+				)
 				return
 			except Exception:
 				pass
@@ -306,22 +417,28 @@ class RouteCostEstimator:
 				raw = json.loads(p2.read_text(encoding="utf-8"))
 				oval = raw.get("oil_price_per_barrel") or raw.get("brent_price") or raw.get("oil_price")
 				if oval:
-					self.fuel_price_per_tonne = float(oval) * self.oil_barrels_per_tonne * self.oil_to_bunker_markup
+					self._set_fuel_price(
+						float(oval) * self.oil_barrels_per_tonne * self.oil_to_bunker_markup,
+						source="local_oil_price_json",
+					)
 					return
 			except Exception:
 				pass
 
-		# 6) Remote oil price fetch via BUNKER_OIL_PRICE_URL
-		oil_url = os.environ.get("BUNKER_OIL_PRICE_URL")
-		if oil_url and requests is not None:
+		# 6) Remote oil price fetch via BUNKER_OIL_PRICE_URL or a default public URL.
+		oil_url = os.environ.get("BUNKER_OIL_PRICE_URL") or self.default_oil_price_url
+		if oil_url and requests is not None and allow_remote:
 			try:
-				resp = requests.get(oil_url, timeout=6)
-				resp.raise_for_status()
-				data = resp.json()
-				for key in ("price", "oil_price", "brent", "wti", "price_usd_per_barrel"):
-					v = data.get(key)
-					if v:
-						self.fuel_price_per_tonne = float(v) * self.oil_barrels_per_tonne * self.oil_to_bunker_markup
-						return
+				data = self._get_json_with_retry(oil_url, timeout=6, attempts=3)
+				if not data:
+					self.last_price_source = "remote_oil_no_data"
+					return
+				oil_val = self._extract_oil_price_per_barrel(data)
+				if oil_val is not None:
+					self._set_fuel_price(
+						oil_val * self.oil_barrels_per_tonne * self.oil_to_bunker_markup,
+						source="remote_oil_url",
+					)
+					return
 			except Exception:
 				pass

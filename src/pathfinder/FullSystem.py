@@ -821,6 +821,8 @@ class PathfinderGUI:
         density = cost_data.get("density_t_per_m3")
         pricing_basis = cost_data.get("pricing_basis", "N/A")
         chargeable_qty = cost_data.get("chargeable_quantity")
+        fuel_price_per_tonne = cost_data.get("fuel_price_per_tonne")
+        fuel_price_source = cost_data.get("fuel_price_source", "unknown")
         contingency = cost_data.get("contingency_usd", 0)
         total = cost_data.get("formatted_total", f"${cost_data.get('total_cost_usd', 0):,}")
         divider = "-" * 40
@@ -846,6 +848,8 @@ class PathfinderGUI:
         header_lines.extend([
             f"Distance: {distance_nm:,} nautical miles",
             f"Time at sea: ~{time_days} days",
+            f"Fuel price: ${fuel_price_per_tonne:,}/tonne" if fuel_price_per_tonne is not None else "Fuel price: N/A",
+            f"Fuel source: {fuel_price_source}",
             divider,
         ])
         header = "\n".join(header_lines) + "\n"
