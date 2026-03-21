@@ -58,6 +58,16 @@ class RouteCostEstimator:
 			"minimum_lcl_charge": 450.0,
 		}
 
+		# Minimum market-like floor for small FCL shipments (per tonne and absolute)
+		self.minimum_fcl_charge_per_tonne = 25.0
+		self.minimum_fcl_total = 1500.0
+
+		# Oil -> bunker conversion parameters (barrels per tonne and markup)
+		# 1 tonne ≈ 7.4 barrels (approx, depends on density); markup approximates
+		# refining/logistics and typical bunker spreads.
+		self.oil_barrels_per_tonne = 7.4
+		self.oil_to_bunker_markup = 1.12
+
 		# Try to refresh price from environment / file / remote if requested
 		if auto_refresh_prices:
 			try:
@@ -74,6 +84,7 @@ class RouteCostEstimator:
 		cargo_mass_tonnes: Optional[float] = None,
 		cargo_volume_m3: Optional[float] = None,
 		time_multiplier: float = 1.0,
+		port_list: Optional[list] = None,
 	) -> dict:
 
 		if path_length_cells <= 0:
@@ -145,17 +156,31 @@ class RouteCostEstimator:
 				"fixed_fees_usd": round(fixed_fees),
 			}
 
-		# FCL: estimate cargo share of vessel voyage cost using density-based charge basis.
+		# FCL: legacy voyage-level pricing (independent of cargo mass/volume).
 		fuel_cost = time_days * self.fuel_consumption_tpd * self.fuel_price_per_tonne
 		time_cost = time_days * self.daily_operating_cost
-		port_cost = self.port_fee_per_stop * port_calls
-		voyage_total = fuel_cost + time_cost + port_cost
+		# Port fees: if a list of ports is provided, use per-port fees when available.
+		if port_list and isinstance(port_list, (list, tuple)):
+			port_cost = 0.0
+			for p in port_list:
+				if not p:
+					continue
+				# accept several common key names for fee
+				fee = None
+				for k in ("port_fee", "port_fee_usd", "port_fee_per_stop"):
+					if isinstance(p, dict) and k in p:
+						fee = p.get(k)
+						break
+				if fee is None:
+					fee = self.port_fee_per_stop
+				try:
+					port_cost += float(fee)
+				except Exception:
+					port_cost += self.port_fee_per_stop
+		else:
+			port_cost = self.port_fee_per_stop * port_calls
+		subtotal = fuel_cost + time_cost + port_cost
 
-		allocation_share = min(max(chargeable_quantity / self.fcl_revenue_tonne_capacity, 0.001), 1.0)
-		allocated_voyage_cost = voyage_total * allocation_share
-		terminal_handling = chargeable_quantity * self.fcl_terminal_handling_per_rt
-
-		subtotal = allocated_voyage_cost + terminal_handling + self.fcl_documentation_fee
 		contingency = subtotal * self.contingency_percent
 		total_cost = subtotal + contingency
 
@@ -165,9 +190,7 @@ class RouteCostEstimator:
 			"fuel_cost_usd": round(fuel_cost),
 			"operating_cost_usd": round(time_cost),
 			"port_fees_usd": round(port_cost),
-			"allocated_voyage_usd": round(allocated_voyage_cost),
-			"terminal_handling_usd": round(terminal_handling),
-			"documentation_fee_usd": round(self.fcl_documentation_fee),
+			"voyage_subtotal_usd": round(subtotal),
 			"contingency_usd": round(contingency),
 			"total_cost_usd": round(total_cost),
 			"formatted_total": f"${round(total_cost):,}",
@@ -177,9 +200,8 @@ class RouteCostEstimator:
 			"cargo_volume_m3": round(cargo_volume_m3, 3),
 			"cargo_defaults_applied": cargo_defaults_applied,
 			"density_t_per_m3": round(density_t_per_m3, 3),
-			"pricing_basis": pricing_basis,
-			"chargeable_quantity": round(chargeable_quantity, 3),
-			"allocation_share": round(allocation_share, 6),
+			"pricing_basis": "not_used_for_fcl",
+			"chargeable_quantity": None,
 		}
 
 	def print_breakdown(self, cost_data: dict):
@@ -261,4 +283,45 @@ class RouteCostEstimator:
 						continue
 			except Exception:
 				# Ignore remote errors
+				pass
+
+		# 4) Try to obtain an oil price (USD/barrel) and convert to bunker per tonne.
+		# Environment override first.
+		oil_env = os.environ.get("BUNKER_OIL_PRICE_PER_BARREL") or os.environ.get("OIL_PRICE_PER_BARREL")
+		if oil_env:
+			try:
+				oil_val = float(oil_env)
+				self.fuel_price_per_tonne = oil_val * self.oil_barrels_per_tonne * self.oil_to_bunker_markup
+				return
+			except Exception:
+				pass
+
+		# 5) Try local file for oil price
+		if prices_json_path:
+			p2 = Path(prices_json_path)
+		else:
+			p2 = Path(__file__).resolve().parents[1] / "data" / "prices.json"
+		if p2.exists():
+			try:
+				raw = json.loads(p2.read_text(encoding="utf-8"))
+				oval = raw.get("oil_price_per_barrel") or raw.get("brent_price") or raw.get("oil_price")
+				if oval:
+					self.fuel_price_per_tonne = float(oval) * self.oil_barrels_per_tonne * self.oil_to_bunker_markup
+					return
+			except Exception:
+				pass
+
+		# 6) Remote oil price fetch via BUNKER_OIL_PRICE_URL
+		oil_url = os.environ.get("BUNKER_OIL_PRICE_URL")
+		if oil_url and requests is not None:
+			try:
+				resp = requests.get(oil_url, timeout=6)
+				resp.raise_for_status()
+				data = resp.json()
+				for key in ("price", "oil_price", "brent", "wti", "price_usd_per_barrel"):
+					v = data.get(key)
+					if v:
+						self.fuel_price_per_tonne = float(v) * self.oil_barrels_per_tonne * self.oil_to_bunker_markup
+						return
+			except Exception:
 				pass

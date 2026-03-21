@@ -15,6 +15,10 @@ from tkinter import filedialog
 import threading
 import time
 import math
+try:
+    from scipy import ndimage
+except Exception:
+    ndimage = None
 
 # Ensure `src` directory is on sys.path so `import pathfinder` works
 # when running this file directly (as a script).
@@ -75,9 +79,12 @@ SHIP_PROFILES = {
 def load_ports_from_json(json_path):
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-
+    # port fees are expected directly on each port entry in the JSON ("port_fee").
     ports = []
     for entry in data:
+        # defensive: skip non-dict entries (avoids 'NoneType' is not iterable)
+        if not isinstance(entry, dict):
+            continue
         name = entry.get("name")
         row = entry.get("grid_row")
         col = entry.get("grid_col")
@@ -85,20 +92,26 @@ def load_ports_from_json(json_path):
         if name is None or row is None or col is None:
             continue
 
-        ports.append(
-            {
-                "name": str(name),
-                "coords": (int(row), int(col)),
-                "country": entry.get("country", ""),
-                "city": entry.get("city", ""),
-            }
-        )
+        port_obj = {
+            "name": str(name),
+            "coords": (int(row), int(col)),
+            "country": entry.get("country", ""),
+            "city": entry.get("city", ""),
+        }
+        # copy any fee present directly on the port entry
+        for k in ("port_fee", "port_fee_usd", "port_fee_per_stop"):
+            if k in entry:
+                try:
+                    port_obj["port_fee"] = float(entry[k])
+                except Exception:
+                    pass
+                break
+        ports.append(port_obj)
 
     if len(ports) < 2:
         raise ValueError("ports.json must contain at least 2 ports with grid_row and grid_col")
 
     return ports
-
 
 PORTS = load_ports_from_json(PORTS_FILE)
 
@@ -107,7 +120,11 @@ PORTS = load_ports_from_json(PORTS_FILE)
 class PathfinderGUI:
     def __init__(self, root):
         self.root = root
-        self.ports = PORTS
+        if isinstance(PORTS, list):
+            self.ports = PORTS
+        else:
+            # Defensive fallback for debug sessions with stale module state.
+            self.ports = load_ports_from_json(PORTS_FILE)
         self.primary_water_mask = None
         self.ship_profile_names = sorted(SHIP_PROFILES.keys())
         self.port_options = sorted(
@@ -680,6 +697,27 @@ class PathfinderGUI:
             self.primary_water_mask = mask
             return
 
+        # Fast path: label connected water components in compiled SciPy code.
+        if ndimage is not None:
+            try:
+                water = (self.grid.data == 0)
+                structure = np.array(
+                    [
+                        [0, 1, 0],
+                        [1, 1, 1],
+                        [0, 1, 0],
+                    ],
+                    dtype=np.uint8,
+                )
+                labels, _num = ndimage.label(water, structure=structure)
+                seed_label = int(labels[seed[0], seed[1]])
+                if seed_label > 0:
+                    self.primary_water_mask = (labels == seed_label)
+                    return
+            except Exception:
+                pass
+
+        # Fallback: pure-Python BFS if SciPy is unavailable.
         queue = deque([seed])
         mask[seed[0], seed[1]] = True
 
@@ -786,23 +824,31 @@ class PathfinderGUI:
         contingency = cost_data.get("contingency_usd", 0)
         total = cost_data.get("formatted_total", f"${cost_data.get('total_cost_usd', 0):,}")
         divider = "-" * 40
-        mass_text = f"{cargo_mass:,.2f} tonnes" if cargo_mass is not None else "N/A"
-        volume_text = f"{cargo_volume:,.2f} m^3" if cargo_volume is not None else "N/A"
-        defaults_note = " (assumed defaults)" if cargo_defaults_applied else ""
+        header_lines = [
+            f"Route: {start_name} → {goal_name}",
+            f"Ship profile: {self.selected_ship_profile}",
+            f"Load type: {load_type}",
+        ]
 
-        header = (
-            f"Route: {start_name} → {goal_name}\n"
-            f"Ship profile: {self.selected_ship_profile}\n"
-            f"Load type: {load_type}\n"
-            f"Cargo mass: {mass_text}{defaults_note}\n"
-            f"Cargo volume: {volume_text}{defaults_note}\n"
-            f"Density: {density if density is not None else 'N/A'} t/m^3\n"
-            f"Pricing basis: {pricing_basis}\n"
-            f"Chargeable quantity: {chargeable_qty if chargeable_qty is not None else 'N/A'}\n"
-            f"Distance: {distance_nm:,} nautical miles\n"
-            f"Time at sea: ~{time_days} days\n"
-            f"{divider}\n"
-        )
+        # Show cargo detail lines only for LCL where they affect pricing.
+        if load_type == "LCL":
+            mass_text = f"{cargo_mass:,.2f} tonnes" if cargo_mass is not None else "N/A"
+            volume_text = f"{cargo_volume:,.2f} m^3" if cargo_volume is not None else "N/A"
+            defaults_note = " (assumed defaults)" if cargo_defaults_applied else ""
+            header_lines.extend([
+                f"Cargo mass: {mass_text}{defaults_note}",
+                f"Cargo volume: {volume_text}{defaults_note}",
+                f"Density: {density if density is not None else 'N/A'} t/m^3",
+                f"Pricing basis: {pricing_basis}",
+                f"Chargeable quantity: {chargeable_qty if chargeable_qty is not None else 'N/A'}",
+            ])
+
+        header_lines.extend([
+            f"Distance: {distance_nm:,} nautical miles",
+            f"Time at sea: ~{time_days} days",
+            divider,
+        ])
+        header = "\n".join(header_lines) + "\n"
 
         if load_type == "LCL":
             ocean_freight = cost_data.get("ocean_freight_usd", 0)
@@ -822,16 +868,15 @@ class PathfinderGUI:
                 f"Fixed fees:         ${fixed_fees:,}\n"
             )
         else:
-            allocated_voyage = cost_data.get("allocated_voyage_usd", 0)
-            terminal_handling = cost_data.get("terminal_handling_usd", 0)
-            documentation_fee = cost_data.get("documentation_fee_usd", 0)
-            allocation_share = cost_data.get("allocation_share")
-            share_text = f"{allocation_share * 100:.3f}%" if allocation_share is not None else "N/A"
+            fuel_cost = cost_data.get("fuel_cost_usd", 0)
+            operating_cost = cost_data.get("operating_cost_usd", 0)
+            port_fees = cost_data.get("port_fees_usd", 0)
+            voyage_subtotal = cost_data.get("voyage_subtotal_usd", 0)
             body = (
-                f"Allocated voyage share: {share_text}\n"
-                f"Allocated voyage cost: ${allocated_voyage:,}\n"
-                f"Terminal handling:     ${terminal_handling:,}\n"
-                f"Documentation fee:     ${documentation_fee:,}\n"
+                f"Fuel cost:          ${fuel_cost:,}\n"
+                f"Operating cost:     ${operating_cost:,}\n"
+                f"Port fees:          ${port_fees:,}\n"
+                f"Voyage subtotal:    ${voyage_subtotal:,}\n"
             )
 
         footer = (
@@ -960,15 +1005,19 @@ class PathfinderGUI:
         self.root.update_idletasks()
 
         try:
+            route_t0 = time.perf_counter()
             path = self.pathfinder.find_path(start, goal)
+            route_compute_secs = time.perf_counter() - route_t0
 
             if path:
                 length = len(path) - 1
                 search_mode = getattr(self.pathfinder, 'last_search_mode', None)
                 if search_mode == 'fallback':
-                    self.status_label.config(text=f"Route found (robust fallback)! {length} steps")
+                    self.status_label.config(
+                        text=f"Route found (robust fallback)! {length} steps in {route_compute_secs:.2f}s"
+                    )
                 else:
-                    self.status_label.config(text=f"Route found! {length} steps")
+                    self.status_label.config(text=f"Route found! {length} steps in {route_compute_secs:.2f}s")
 
                 # Calculate cost
                 cost_data = self.cost_estimator.estimate(
@@ -976,6 +1025,7 @@ class PathfinderGUI:
                     load_type=self.selected_load_type,
                     cargo_mass_tonnes=self.selected_cargo_mass_tonnes,
                     cargo_volume_m3=self.selected_cargo_volume_m3,
+                    port_list=[start_port, goal_port],
                 )
 
                 # Start a background weather fetch so the UI doesn't block.
@@ -1019,6 +1069,7 @@ class PathfinderGUI:
                         cargo_mass_tonnes=self.selected_cargo_mass_tonnes,
                         cargo_volume_m3=self.selected_cargo_volume_m3,
                         time_multiplier=multiplier,
+                        port_list=[start_port, goal_port],
                     )
 
                 cost_data["weather_summary"] = weather_summary
@@ -1100,7 +1151,7 @@ class PathfinderGUI:
 
                 self.draw_route(path, start, goal, start_name, goal_name, weather_samples=weather_samples)
             else:
-                self.status_label.config(text="No route found")
+                self.status_label.config(text=f"No route found ({route_compute_secs:.2f}s)")
                 messagebox.showinfo("Result", "No valid sea route between these ports.")
                 self.cost_text.config(state="normal")
                 self.cost_text.delete(1.0, tk.END)
@@ -1264,6 +1315,7 @@ class PathfinderGUI:
                     cargo_mass_tonnes=self.selected_cargo_mass_tonnes,
                     cargo_volume_m3=self.selected_cargo_volume_m3,
                     time_multiplier=multiplier,
+                    port_list=[self.resolve_port_entry(start_name), self.resolve_port_entry(goal_name)],
                 )
 
             cost_data['weather_summary'] = weather_summary

@@ -7,6 +7,8 @@
     "longitude": 4.479,
     "grid_row": 1917,
     "grid_col": 1964
+    ,
+    "port_fee": 120000
   },
   {
     "name": "Amsterdam",
@@ -16,6 +18,8 @@
     "longitude": 4.89,
     "grid_row": 1886,
     "grid_col": 1984
+    ,
+    "port_fee": 85000
   },
   {
     "name": "Moerdijk",
@@ -25,6 +29,8 @@
     "longitude": 4.63,
     "grid_row": 1960,
     "grid_col": 1959
+    ,
+    "port_fee": 60000
   },
   {
     "name": "Antwerp-Bruges",
@@ -34,6 +40,8 @@
     "longitude": 4.4,
     "grid_row": 1974,
     "grid_col": 1965
+    ,
+    "port_fee": 115000
   },
   {
     "name": "Hamburg",
@@ -43,6 +51,8 @@
     "longitude": 9.987,
     "grid_row": 1791,
     "grid_col": 2187
+    ,
+    "port_fee": 110000
   },
   {
     "name": "Bremerhaven",
@@ -52,6 +62,8 @@
     "longitude": 8.58,
     "grid_row": 1807,
     "grid_col": 2162
+    ,
+    "port_fee": 90000
   },
   {
     "name": "Wilhelmshaven/JadeWeser",
@@ -61,6 +73,8 @@
     "longitude": 8.14,
     "grid_row": 1805,
     "grid_col": 2148
+    ,
+    "port_fee": 95000
   },
   {
     "name": "Algeciras",
@@ -70,6 +84,8 @@
     "longitude": -5.435,
     "grid_row": 3016,
     "grid_col": 1298
+    ,
+    "port_fee": 70000
   },
   {
     "name": "Valencia",
@@ -79,6 +95,8 @@
     "longitude": -0.32,
     "grid_row": 2841,
     "grid_col": 1627
+    ,
+    "port_fee": 65000
   },
   {
     "name": "Barcelona",
@@ -88,6 +106,8 @@
     "longitude": 2.15,
     "grid_row": 2711,
     "grid_col": 1791
+    ,
+    "port_fee": 70000
   },
   {
     "name": "Bilbao",
@@ -97,6 +117,8 @@
     "longitude": -2.93,
     "grid_row": 2519,
     "grid_col": 1512
+    ,
+    "port_fee": 50000
   },
   {
     "name": "Las Palmas (Canary)",
@@ -106,6 +128,8 @@
     "longitude": -15.42,
     "grid_row": 3000,
     "grid_col": 1353
+    ,
+    "port_fee": 60000
   },
   {
     "name": "Trieste",
@@ -115,6 +139,8 @@
     "longitude": 13.77,
     "grid_row": 2408,
     "grid_col": 2431
+    ,
+    "port_fee": 68000
   },
   {
     "name": "Genoa",
@@ -124,6 +150,8 @@
     "longitude": 8.93,
     "grid_row": 2513,
     "grid_col": 2186
+    ,
+    "port_fee": 75000
   },
   {
     "name": "La Spezia",
@@ -133,6 +161,8 @@
     "longitude": 9.82,
     "grid_row": 2536,
     "grid_col": 2237
+    ,
+    "port_fee": 65000
   },
   {
     "name": "Naples",
@@ -142,6 +172,8 @@
     "longitude": 14.25,
     "grid_row": 2770,
     "grid_col": 2483
+    ,
+    "port_fee": 72000
   },
   {
     "name": "Piraeus",
@@ -151,6 +183,8 @@
     "longitude": 23.637,
     "grid_row": 2924,
     "grid_col": 3059
+    ,
+    "port_fee": 90000
   },
   {
     "name": "Felixstowe",
@@ -160,6 +194,8 @@
     "longitude": 1.351,
     "grid_row": 1909,
     "grid_col": 1832
+    ,
+    "port_fee": 125000
   },
   {
     "name": "Southampton",
@@ -169,6 +205,8 @@
     "longitude": -1.404,
     "grid_row": 1988,
     "grid_col": 1839
+    ,
+    "port_fee": 80000
   },
   {
     "name": "London Gateway",
@@ -178,6 +216,8 @@
     "longitude": 0.46,
     "grid_row": 1913,
     "grid_col": 1844
+    ,
+    "port_fee": 95000
   },
   {
     "name": "Liverpool (Peel Ports)",
@@ -187,6 +227,8 @@
     "longitude": -3.0,
     "grid_row": 1964,
     "grid_col": 1892
+    ,
+    "port_fee": 70000
   },
   {
     "name": "Le Havre",
@@ -196,6 +238,8 @@
     "longitude": 0.107,
     "grid_row": 2081,
     "grid_col": 1738
+    ,
+    "port_fee": 60000
   },
   {
     "name": "Marseille-Fos",
@@ -205,6 +249,8 @@
     "longitude": 5.04,
     "grid_row": 2570,
     "grid_col": 1964
+    ,
+    "port_fee": 65000
   },
   {
     "name": "Dunkirk",
@@ -214,6 +260,8 @@
     "longitude": 2.37,
     "grid_row": 1982,
     "grid_col": 1872
+    ,
+    "port_fee": 55000
   },
   {
     "name": "Gdansk",
@@ -223,6 +271,8 @@
     "longitude": 18.645,
     "grid_row": 1783,
     "grid_col": 2294
+    ,
+    "port_fee": 58000
   },
   {
     "name": "Gdynia",
@@ -232,6 +282,8 @@
     "longitude": 18.53,
     "grid_row": 1783,
     "grid_col": 2294
+    ,
+    "port_fee": 58000
   },
   {
     "name": "Sines",
@@ -241,6 +293,8 @@
     "longitude": -8.89,
     "grid_row": 2814,
     "grid_col": 1124
+    ,
+    "port_fee": 62000
   },
   {
     "name": "Lisbon",
@@ -250,6 +304,8 @@
     "longitude": -9.14,
     "grid_row": 2809,
     "grid_col": 1110
+    ,
+    "port_fee": 63000
   },
   {
     "name": "Gothenburg",
@@ -259,6 +315,8 @@
     "longitude": 11.97,
     "grid_row": 1497,
     "grid_col": 2302
+    ,
+    "port_fee": 70000
   },
   {
     "name": "Aarhus",
@@ -268,6 +326,8 @@
     "longitude": 10.21,
     "grid_row": 1617,
     "grid_col": 2247
+    ,
+    "port_fee": 52000
   },
   {
     "name": "Copenhagen-Malmo",
@@ -277,6 +337,8 @@
     "longitude": 12.59,
     "grid_row": 1648,
     "grid_col": 2347
+    ,
+    "port_fee": 72000
   },
   {
     "name": "Helsinki",
@@ -286,6 +348,8 @@
     "longitude": 24.94,
     "grid_row": 1815,
     "grid_col": 2445
+    ,
+    "port_fee": 90000
   },
   {
     "name": "Klaipeda",
@@ -295,6 +359,8 @@
     "longitude": 21.13,
     "grid_row": 1815,
     "grid_col": 2445
+    ,
+    "port_fee": 50000
   },
   {
     "name": "Constanta",
@@ -304,6 +370,8 @@
     "longitude": 28.65,
     "grid_row": 2397,
     "grid_col": 3243
+    ,
+    "port_fee": 45000
   },
   {
     "name": "Izmir",
@@ -313,6 +381,8 @@
     "longitude": 27.14,
     "grid_row": 2838,
     "grid_col": 3247
+    ,
+    "port_fee": 48000
   },
   {
     "name": "Koper",
@@ -322,6 +392,8 @@
     "longitude": 13.73,
     "grid_row": 2414,
     "grid_col": 2428
+    ,
+    "port_fee": 48000
   },
   {
     "name": "Rijeka",
@@ -331,5 +403,7 @@
     "longitude": 14.44,
     "grid_row": 2432,
     "grid_col": 2470
+    ,
+    "port_fee": 47000
   }
 ]

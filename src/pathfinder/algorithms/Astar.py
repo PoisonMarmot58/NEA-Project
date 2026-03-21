@@ -403,6 +403,28 @@ class AStarPathfinder:
             self._cache_put(start, goal, path)
             return path
 
+        # Try bidirectional search before expensive fallback stages.
+        # Start with corridor-bounded attempts, then allow full-map search.
+        for limit, bounds in (
+            (120000, corridor),
+            (260000, corridor),
+            (None, None),
+        ):
+            # Preserve previous behavior for very short routes: skip low-limit
+            # bidirectional tries unless route is beyond threshold.
+            if dist < self.long_route_threshold and bounds is corridor:
+                continue
+            path = self._find_path_bidirectional(
+                start,
+                goal,
+                max_expansions=limit,
+                corridor_bounds=bounds,
+            )
+            if path:
+                self.last_search_mode = 'bidirectional'
+                self._cache_put(start, goal, path)
+                return path
+
         # Fast pass 2: weighted/coastal search across full map.
         path = self._find_path_internal(
             start,
@@ -415,20 +437,6 @@ class AStarPathfinder:
             self.last_search_mode = 'fast'
             self._cache_put(start, goal, path)
             return path
-
-        # Long routes benefit from bidirectional search before full fallback.
-        if dist >= self.long_route_threshold:
-            for limit in (120000, 260000):
-                path = self._find_path_bidirectional(
-                    start,
-                    goal,
-                    max_expansions=limit,
-                    corridor_bounds=corridor,
-                )
-                if path:
-                    self.last_search_mode = 'bidirectional'
-                    self._cache_put(start, goal, path)
-                    return path
 
         # Robust fallback in stages to avoid jumping immediately to unlimited search.
         for limit in (180000, 420000, None):
