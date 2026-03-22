@@ -374,6 +374,18 @@ class PathfinderGUI:
         # Place weather panel in the info_frame grid to match cost frame size
         self.weather_frame.grid(row=0, column=1, sticky='nsew', padx=(8, 0), pady=0)
 
+        # Control bar for weather display toggles (Aggregate / Top-3 / Full list)
+        ctrl_frame = tk.Frame(self.weather_frame, bg="#f8f9fa")
+        ctrl_frame.pack(fill=tk.X, padx=(0, 0), pady=(0, 6))
+        tk.Label(ctrl_frame, text="Display:", bg="#f8f9fa", font=("Arial", 10)).pack(side=tk.LEFT)
+        self.show_summary_var = tk.BooleanVar(value=True)
+        self.show_top3_var = tk.BooleanVar(value=True)
+        self.show_full_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(ctrl_frame, text="Summary", variable=self.show_summary_var, bg="#f8f9fa", font=("Arial", 9), command=lambda: self._update_weather_display_from_last()).pack(side=tk.LEFT, padx=(6,4))
+        tk.Checkbutton(ctrl_frame, text="Top-3", variable=self.show_top3_var, bg="#f8f9fa", font=("Arial", 9), command=lambda: self._update_weather_display_from_last()).pack(side=tk.LEFT, padx=4)
+        tk.Checkbutton(ctrl_frame, text="Full list", variable=self.show_full_var, bg="#f8f9fa", font=("Arial", 9), command=lambda: self._update_weather_display_from_last()).pack(side=tk.LEFT, padx=4)
+        tk.Button(ctrl_frame, text="Show details", command=lambda: (self.show_full_var.set(True), self._update_weather_display_from_last()), font=("Arial", 9)).pack(side=tk.LEFT, padx=6)
+
         # Larger, clearer weather text area for readability
         self.weather_text = tk.Text(
             self.weather_frame,
@@ -1088,58 +1100,10 @@ class PathfinderGUI:
 
                 # Populate weather details panel with plain-English summary and samples
                 try:
-                    self.weather_text.config(state="normal")
+                    self.weather_text.config(state='normal')
                     self.weather_text.delete(1.0, tk.END)
-                    parts = []
-                    ws = cost_data.get('weather_summary')
-                    wm = cost_data.get('weather_multiplier')
-                    if ws:
-                        parts.append(f"Weather summary: {ws}")
-                    if wm:
-                        parts.append(f"Estimated travel time: {wm}x normal")
-                    if ws or wm:
-                        parts.append('')
-
-                    if weather_samples:
-                        parts.append('Detailed samples along the route:')
-                        def deg_to_compass(deg):
-                            if deg is None:
-                                return 'N/A'
-                            dirs = [
-                                'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
-                                'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'
-                            ]
-                            ix = int((deg + 11.25) / 22.5) % 16
-                            return dirs[ix]
-
-                        for s in weather_samples:
-                            idx = s.get('path_index')
-                            eta = s.get('eta_hours')
-                            latlon = s.get('latlon') or s.get('grid_cell')
-                            if isinstance(latlon, tuple) and len(latlon) == 2 and isinstance(latlon[0], float):
-                                latlon_str = f"{latlon[0]:.3f}, {latlon[1]:.3f}"
-                            else:
-                                latlon_str = f"{latlon[0]},{latlon[1]}" if latlon else 'N/A'
-                            wk = s.get('wind_knots')
-                            wd = s.get('wind_dir')
-                            wv = s.get('wave_m')
-                            pen = s.get('penalty_fraction') or 0.0
-                            if wk is not None:
-                                compass = deg_to_compass(wd)
-                                wind_part = f"{wk:.1f} kt from {compass} ({int(wd)}°)" if wd is not None else f"{wk:.1f} kt"
-                            else:
-                                wind_part = 'Wind: N/A'
-                            wave_part = f"{wv:.2f} m" if wv is not None else 'N/A'
-                            pen_pct = int(round(pen * 100))
-                            pen_part = f"+{pen_pct}% longer"
-                            parts.append(f"• Sample {idx}: in ~{eta} h — at {latlon_str} — Wind: {wind_part}; Waves: {wave_part}; Time change: {pen_part}")
-                    else:
-                        if ws:
-                            parts.append(ws)
-                        else:
-                            parts.append('No weather samples available for this route.')
-
-                    self.weather_text.insert(tk.END, "\n".join(parts))
+                    lines = self._render_weather_lines(weather_samples, cost_data)
+                    self.weather_text.insert(tk.END, "\n".join(lines))
                 except Exception:
                     try:
                         self.weather_text.insert(tk.END, 'Weather display failed')
@@ -1324,6 +1288,13 @@ class PathfinderGUI:
             if multiplier != 1.0:
                 cost_data['weather_multiplier'] = round(multiplier, 3)
 
+            # store last fetched values so UI toggles can re-render without refetching
+            try:
+                self._last_weather_samples = weather_samples
+                self._last_weather_cost_data = cost_data
+            except Exception:
+                pass
+
             # refresh cost_text
             try:
                 cost_text = self.build_cost_text(start_name, goal_name, len(path) - 1, cost_data)
@@ -1340,40 +1311,7 @@ class PathfinderGUI:
             try:
                 self.weather_text.config(state='normal')
                 self.weather_text.delete(1.0, tk.END)
-                lines = []
-                ws = cost_data.get('weather_summary')
-                wm = cost_data.get('weather_multiplier')
-                if ws:
-                    lines.append(f"Summary: {ws}")
-                if wm:
-                    lines.append(f"Time multiplier: {wm}x")
-                if ws or wm:
-                    lines.append('-' * 40)
-
-                if weather_samples:
-                    lines.append(f"{'Sample':<8} {'ETA(h)':<7} {'Lat,Lon':<20} {'Wind':<18} {'Wave':<8} {'Penalty':<8}")
-                    for s in weather_samples:
-                        idx = s.get('path_index')
-                        eta = s.get('eta_hours')
-                        latlon = s.get('latlon') or s.get('grid_cell')
-                        if isinstance(latlon, tuple) and len(latlon) == 2 and isinstance(latlon[0], float):
-                            latlon_str = f"{latlon[0]:.3f},{latlon[1]:.3f}"
-                        else:
-                            latlon_str = f"{latlon[0]},{latlon[1]}" if latlon else 'N/A'
-                        wk = s.get('wind_knots')
-                        wd = s.get('wind_dir')
-                        wv = s.get('wave_m')
-                        pen = s.get('penalty_fraction') or 0.0
-                        wind_str = f"{wk:.1f} kt @{int(wd) if wd is not None else 'N/A'}°" if wk is not None else 'N/A'
-                        wave_str = f"{wv:.2f} m" if wv is not None else 'N/A'
-                        pen_str = f"+{int(round(pen*100))}%"
-                        lines.append(f"{str(idx):<8} {str(eta):<7} {latlon_str:<20} {wind_str:<18} {wave_str:<8} {pen_str:<8}")
-                else:
-                    if ws:
-                        lines.append(ws)
-                    else:
-                        lines.append('No weather samples available.')
-
+                lines = self._render_weather_lines(weather_samples, cost_data)
                 self.weather_text.insert(tk.END, "\n".join(lines))
             except Exception:
                 try:
@@ -1402,6 +1340,104 @@ class PathfinderGUI:
         except Exception as e:
             self.status_label.config(text="Weather update failed")
             print('Weather apply failed:', e)
+
+    def _render_weather_lines(self, weather_samples, cost_data):
+        """Return a list of lines for the weather panel based on current display mode."""
+        lines = []
+        ws = cost_data.get('weather_summary')
+        wm = cost_data.get('weather_multiplier')
+
+        show_summary = getattr(self, 'show_summary_var', None) and self.show_summary_var.get()
+        show_top3 = getattr(self, 'show_top3_var', None) and self.show_top3_var.get()
+        show_full = getattr(self, 'show_full_var', None) and self.show_full_var.get()
+        # If user turned everything off, fall back to summary+top3 for usability
+        if not any((show_summary, show_top3, show_full)):
+            show_summary = True
+            show_top3 = True
+
+        if not weather_samples:
+            # If there are no samples, only show summary if requested and available
+            if show_summary and ws:
+                lines.append(f"Weather summary: {ws}")
+                if wm:
+                    lines.append(f"Estimated travel time: {wm}x normal")
+            return lines
+
+        # Compute aggregate stats
+        sample_count = len(weather_samples)
+        penalties = [s.get('penalty_fraction', 0.0) for s in weather_samples if s is not None]
+        avg_pen = (sum(penalties) / len(penalties)) if penalties else 0.0
+        max_pen = max(penalties) if penalties else 0.0
+        lines.append(f"Samples: {sample_count} — Avg penalty: {avg_pen*100:.1f}% — Max: {max_pen*100:.1f}%")
+
+        def fmt_sample(s):
+            idx = s.get('path_index')
+            eta = s.get('eta_hours')
+            latlon = s.get('latlon') or s.get('grid_cell')
+            if isinstance(latlon, tuple) and len(latlon) == 2 and isinstance(latlon[0], float):
+                latlon_str = f"{latlon[0]:.3f}, {latlon[1]:.3f}"
+            else:
+                latlon_str = f"{latlon[0]},{latlon[1]}" if latlon else 'N/A'
+            wk = s.get('wind_knots')
+            wd = s.get('wind_dir')
+            wv = s.get('wave_m')
+            pen = s.get('penalty_fraction') or 0.0
+            pen_pct = int(round(pen * 100))
+            wind_part = f"{wk:.1f} kt @{int(wd)}°" if wk is not None and wd is not None else (f"{wk:.1f} kt" if wk is not None else 'Wind: N/A')
+            wave_part = f"{wv:.2f} m" if wv is not None else 'N/A'
+            return f"Sample {idx}: in ~{eta} h — at {latlon_str} — Wind: {wind_part}; Waves: {wave_part}; Time change: +{pen_pct}%"
+
+        # Top-3 by penalty
+        sorted_samples = sorted(weather_samples, key=lambda x: x.get('penalty_fraction', 0.0), reverse=True)
+        top_n = sorted_samples[:3]
+
+        # Summary (journey-level summary)
+        if show_summary:
+            if ws:
+                lines.append(f"Weather summary: {ws}")
+            if wm:
+                lines.append(f"Estimated travel time: {wm}x normal")
+            if ws or wm:
+                lines.append('-' * 40)
+
+        # Top-3 section
+        if show_top3:
+            lines.append('Top 3 worst samples:')
+            for s in top_n:
+                lines.append(fmt_sample(s))
+            # hint when full not enabled
+            if not show_full:
+                lines.append('')
+                lines.append('Enable "Full list" to see all samples (or click "Show details").')
+
+        # Full detailed list (after top-3 when both enabled)
+        if show_full:
+            lines.append('')
+            lines.append('Detailed samples along the route:')
+            for s in weather_samples:
+                lines.append(fmt_sample(s))
+
+        return lines
+
+    def _update_weather_display_from_last(self):
+        """Re-render the weather_text widget using the last fetched samples and cost data."""
+        try:
+            wsamples = getattr(self, '_last_weather_samples', None)
+            cdata = getattr(self, '_last_weather_cost_data', None) or {}
+            self.weather_text.config(state='normal')
+            self.weather_text.delete(1.0, tk.END)
+            lines = self._render_weather_lines(wsamples, cdata)
+            self.weather_text.insert(tk.END, "\n".join(lines))
+        except Exception:
+            try:
+                self.weather_text.insert(tk.END, 'Weather display failed')
+            except Exception:
+                pass
+        finally:
+            try:
+                self.weather_text.config(state='disabled')
+            except Exception:
+                pass
 
     def on_scroll_zoom(self, event):
         if event.inaxes != self.ax:

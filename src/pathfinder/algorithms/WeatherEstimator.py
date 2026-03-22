@@ -6,7 +6,8 @@ Open-Meteo for current wind speed, and returns a time multiplier and a
 small human-readable summary of the effect.
 
 Behaviour:
-- Sample up to 5 points along the path (start, 1/4, 1/2, 3/4, end).
+- Sample points adaptively along the path (always includes start/end), with
+    more samples for longer routes and bounded caps to avoid excessive API load.
 - Query Open-Meteo `current_weather` for each sample point (if `requests`
   is available). Wind speed (m/s) is converted to knots.
 - If average wind > 10 knots, each knot above 10 adds 2% extra time.
@@ -194,10 +195,30 @@ class WeatherImpactEstimator:
         self._latlon_cache[key] = (latf, lonf)
         return latf, lonf
 
-    def sample_path_points(self, path: List[Tuple[int, int]], max_samples: int = 5):
+    def _adaptive_sample_count(self, path_len: int, detailed: bool = False) -> int:
+        """Choose sample count based on route length with bounded caps.
+
+        Detailed mode supports denser sampling for long voyages because these
+        samples are shown in the UI and drive time penalties.
+        """
+        if path_len <= 0:
+            return 0
+
+        base_samples = 5
+        step_cells = 100 if detailed else 250
+        cap_samples = 30 if detailed else 15
+
+        extra = max(0, (path_len - 1) // step_cells)
+        samples = base_samples + int(extra)
+        samples = max(2, min(samples, cap_samples))
+        return min(samples, path_len)
+
+    def sample_path_points(self, path: List[Tuple[int, int]], max_samples: int = None):
         n = len(path)
         if n == 0:
             return []
+        if max_samples is None:
+            max_samples = self._adaptive_sample_count(n, detailed=False)
         if n <= max_samples:
             idxs = list(range(n))
         else:
@@ -229,7 +250,9 @@ class WeatherImpactEstimator:
         br = (math.degrees(math.atan2(x, y)) + 360) % 360
         return br
 
-    def _sample_indices(self, n: int, max_samples: int = 5):
+    def _sample_indices(self, n: int, max_samples: int = None, detailed: bool = False):
+        if max_samples is None:
+            max_samples = self._adaptive_sample_count(n, detailed=detailed)
         if n <= max_samples:
             return list(range(n))
         idxs = [0]
@@ -251,7 +274,7 @@ class WeatherImpactEstimator:
         if requests is None:
             return 1.0, "Weather unavailable (requests not installed)"
 
-        # Simple mode: sample up to 5 waypoints and use 'current_weather'
+        # Simple mode: sample adaptively and use 'current_weather'
         if not detailed:
             latlons = self.sample_path_points(path)
             if not latlons:
@@ -340,7 +363,7 @@ class WeatherImpactEstimator:
             cumdist.append(cumdist[-1] + d)
 
         n = len(path)
-        idxs = self._sample_indices(n, max_samples=5)
+        idxs = self._sample_indices(n, detailed=True)
         # Prepare collectors and query hourly forecasts for each sample
         winds_knots = []
         wind_dirs = []
