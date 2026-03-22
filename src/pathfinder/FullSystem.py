@@ -15,10 +15,8 @@ from tkinter import filedialog
 import threading
 import time
 import math
-try:
-    from scipy import ndimage
-except Exception:
-    ndimage = None
+from scipy import ndimage
+
 
 # Ensure `src` directory is on sys.path so `import pathfinder` works
 # when running this file directly (as a script).

@@ -3,11 +3,7 @@ import json
 import time
 from pathlib import Path
 from typing import Optional
-
-try:
-		import requests
-except Exception:
-		requests = None
+import requests
 
 
 class RouteCostEstimator:

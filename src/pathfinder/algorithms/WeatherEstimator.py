@@ -22,11 +22,8 @@ import math
 import os
 import numpy as np
 import json
+import requests
 
-try:
-    import requests
-except Exception:
-    requests = None
 
 # Control points mapping lat/lon -> pixel row/col.
 # Prefer the user-calibrated points stored under src/pathfinder/data/ports_user_calibrated.json.
