@@ -461,15 +461,22 @@ class AStarPathfinder:
 #test
 
 if __name__ == "__main__":
-    grid = Grid(
-        r"c:\Users\isaac\OneDrive\Desktop\NEA Project new\NEA-Project-2"
-        r"\Pathfinder Algorithm\Data\FullGridOfEurope.npy"
-    )
+    # Resolve grid file relative to this package so the module can be run
+    # from any working directory without relying on a hardcoded absolute path.
+    from pathlib import Path
+
+    grid_path = Path(__file__).resolve().parents[1] / "data" / "FullGridOfEurope.npy"
+    if not grid_path.exists():
+        raise FileNotFoundError(
+            f"Grid file not found: {grid_path!s}\n"
+            "Place FullGridOfEurope.npy in src/pathfinder/data/ or set up the correct path."
+        )
+
+    grid = Grid(str(grid_path))
     pathfinder = AStarPathfinder(grid)
 
-
     start_port = (618, 482)   # Rotterdam
-    goal_port  = (952, 1182)  # Piraeus
+    goal_port = (952, 1182)   # Piraeus
 
     print(f"Finding sea route from {start_port} → {goal_port}...\n")
     path = pathfinder.find_path(start_port, goal_port)
